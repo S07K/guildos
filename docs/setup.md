@@ -37,6 +37,27 @@ They create `public.waitlist`, `public.waitlist_rate_limits`, and `public.consum
 
 In Supabase's **Connect** dialog, copy your project URL. In **Settings → API Keys**, create/copy a backend secret key beginning `sb_secret_`. The app now supports these keys on the `apikey` header, as documented by [Supabase](https://supabase.com/docs/guides/getting-started/api-keys). Existing legacy service-role JWTs remain supported through `SUPABASE_SERVICE_ROLE_KEY`; configure one key type, not both. A publishable/anon key cannot perform these writes.
 
+### Test your Supabase connection locally
+
+Create a private, ignored `.env.local` in the project root with your own project values:
+
+```dotenv
+SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_SECRET_KEY=sb_secret_your-server-secret
+WAITLIST_STORAGE=supabase
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+```
+
+Copy the actual URL and secret directly from Supabase into the local file. Do not paste them into chat, add a `NEXT_PUBLIC_` prefix, or commit `.env.local`. Then run:
+
+```sh
+npm run check:supabase
+```
+
+It checks server-key access to the waitlist table and calls the rate-limit RPC, without inserting an email or printing credentials. The RPC check briefly creates and then deletes a dedicated hashed probe row. Both migrations must be applied to this same Supabase project. If you use an old service-role JWT instead, name it `SUPABASE_SERVICE_ROLE_KEY`.
+
+Once both checks pass, run `npm run dev`, submit a test email locally, and confirm the row exists in the Supabase Table Editor. Remove the test address there when finished. Stop the local server before testing the deployed production site.
+
 ## 3. Configure Vercel
 
 Import the repository as a Next.js project and use Node.js **24.x**. Keep the framework's default output directory and use `npm run build` as the build command.
