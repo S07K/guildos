@@ -1,11 +1,36 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import './creative-art.css';
+
+const siteUrl = 'https://guildos.design';
+const description = 'An automated design platform powered by specialized AI agents. Bring your own key (BYOK) and let the agents build.';
+
 export const metadata: Metadata = {
-  title: 'GuildOS — Your next design team is a guild of AI agents',
-  description: 'An AI design agency built around your vision. From brief to beautiful, with specialist agents and you in creative control. Join the early access waitlist.',
-  openGraph: { title: 'GuildOS — Great design. Greater possibilities.', description: 'Your vision. A guild of specialists. One creative workspace.', type: 'website' },
+  metadataBase: new URL(siteUrl),
+  title: 'GuildOS | The Automated AI Design Agency',
+  description,
+  alternates: { canonical: '/' },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: { index: true, follow: true, 'max-image-preview': 'large', 'max-snippet': -1, 'max-video-preview': -1 },
+  },
+  openGraph: {
+    title: 'GuildOS | The Automated AI Design Agency',
+    description,
+    url: siteUrl,
+    siteName: 'GuildOS',
+    type: 'website',
+    images: [{ url: '/og-image.png', width: 1200, height: 630, alt: 'GuildOS | The Automated AI Design Agency' }],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'GuildOS | The Automated AI Design Agency',
+    description,
+    images: [{ url: '/og-image.png', alt: 'GuildOS | The Automated AI Design Agency' }],
+  },
 };
+
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return <html lang="en"><body>{children}</body></html>;
 }

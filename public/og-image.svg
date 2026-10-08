@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" fill="none">
+  <defs>
+    <linearGradient id="paper" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fff"/><stop offset="1" stop-color="#f7f9fb"/>
+    </linearGradient>
+    <linearGradient id="orbit" x1="760" y1="127" x2="1111" y2="508" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#aabbd0"/><stop offset="1" stop-color="#526e91"/>
+    </linearGradient>
+    <radialGradient id="halo" cx="0" cy="0" r="1" gradientTransform="matrix(232 0 0 232 962 318)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#edf2f6"/><stop offset="1" stop-color="#edf2f6" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="shadow" x="865" y="220" width="194" height="194" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#536b88" flood-opacity=".12"/>
+    </filter>
+  </defs>
+  <path fill="url(#paper)" d="M0 0h1200v630H0z"/>
+  <circle cx="965" cy="315" r="235" fill="url(#halo)"/>
+
+  <g transform="translate(76 67)" stroke="#526e91" stroke-width="2.5">
+    <rect x="2" y="2" width="21" height="21" rx="7"/>
+    <rect x="13" y="13" width="21" height="21" rx="7"/>
+  </g>
+  <text x="121" y="93" fill="#26313d" font-family="Arial,Helvetica,sans-serif" font-size="31" font-weight="700" letter-spacing="-1.5">guildos</text>
+
+  <rect x="78" y="156" width="252" height="31" rx="15.5" fill="#eff3f7"/>
+  <circle cx="96" cy="171.5" r="4" fill="#789784"/>
+  <text x="109" y="176" fill="#526e91" font-family="Arial,Helvetica,sans-serif" font-size="12" font-weight="700" letter-spacing="1.7">YOUR IDEA, MEET YOUR GUILD</text>
+
+  <text x="76" y="274" fill="#26313d" font-family="Arial,Helvetica,sans-serif" font-size="61" font-weight="400" letter-spacing="-3.3">Your next big idea.</text>
+  <text x="76" y="357" fill="#526e91" font-family="Georgia,serif" font-size="62" font-style="italic" letter-spacing="-2.4">A whole guild behind it.</text>
+
+  <path d="M78 410h510" stroke="#e5eaf0"/>
+  <text x="78" y="453" fill="#697582" font-family="Arial,Helvetica,sans-serif" font-size="20">An automated design platform powered by</text>
+  <text x="78" y="484" fill="#697582" font-family="Arial,Helvetica,sans-serif" font-size="20">specialized AI agents. You stay in creative control.</text>
+  <circle cx="81" cy="550" r="4" fill="#789784"/>
+  <text x="96" y="555" fill="#697582" font-family="Arial,Helvetica,sans-serif" font-size="14" letter-spacing=".4">guildos.design</text>
+
+  <g stroke="url(#orbit)" stroke-width="1.35" opacity=".68">
+    <ellipse cx="965" cy="315" rx="177" ry="94" transform="rotate(-35 965 315)"/>
+    <ellipse cx="965" cy="315" rx="177" ry="94" transform="rotate(35 965 315)"/>
+    <ellipse cx="965" cy="315" rx="177" ry="94" transform="rotate(90 965 315)"/>
+    <ellipse cx="965" cy="315" rx="177" ry="94" transform="rotate(145 965 315)"/>
+    <ellipse cx="965" cy="315" rx="177" ry="94" transform="rotate(210 965 315)"/>
+    <ellipse cx="965" cy="315" rx="177" ry="94" transform="rotate(265 965 315)"/>
+  </g>
+  <circle cx="965" cy="315" r="121" stroke="#d8e1ea" stroke-width="1" stroke-dasharray="2 7"/>
+  <g filter="url(#shadow)">
+    <circle cx="965" cy="315" r="72" fill="#fff"/>
+    <circle cx="965" cy="315" r="71.5" stroke="#dfe6ed"/>
+    <g transform="translate(929 279)" stroke="#526e91" stroke-width="4">
+      <rect x="4" y="4" width="35" height="35" rx="11"/>
+      <rect x="21" y="21" width="35" height="35" rx="11"/>
+    </g>
+  </g>
+  <g stroke="#fff" stroke-width="4">
+    <circle cx="965" cy="138" r="9" fill="#789784"/>
+    <circle cx="1131" cy="258" r="9" fill="#d1a18d"/>
+    <circle cx="1068" cy="492" r="9" fill="#789784"/>
+    <circle cx="861" cy="471" r="9" fill="#a7b8cd"/>
+    <circle cx="798" cy="258" r="9" fill="#d1a18d"/>
+  </g>
+  <g fill="#718ba5" opacity=".7">
+    <circle cx="1064" cy="176" r="2.5"/><circle cx="1154" cy="377" r="2.5"/>
+    <circle cx="901" cy="520" r="2.5"/><circle cx="779" cy="347" r="2.5"/>
+  </g>
+</svg>
