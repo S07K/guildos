@@ -42,10 +42,34 @@ test('unused image optimization endpoint is disabled', async ({ request }) => {
 test('reduced motion leaves the creative artwork static', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/');
-  await expect(page.locator('.loop-sculpture')).toHaveCSS('animation-name', 'none');
-  await expect(page.locator('.creative-loop')).toBeVisible();
   await expect(page.locator('.sketch-stroke')).toHaveCSS('stroke-dashoffset', '0px');
   await expect(page.locator('.petal-orbit')).toHaveCSS('animation-name', 'none');
+  await expect(page.locator('.hero-landscape')).toHaveCSS('transform', 'none');
+  await expect(page.locator('#hero-title')).toHaveCSS('opacity', '1');
+});
+
+test('scroll motion reveals content once and responds to reduced-motion changes', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.goto('/');
+  const background = page.locator('.hero-landscape');
+  await expect(background).not.toHaveCSS('transform', 'none');
+  const initialTransform = await background.evaluate(element => getComputedStyle(element).transform);
+  await page.evaluate(() => window.scrollTo({ top: 250, behavior: 'instant' }));
+  await expect.poll(() => background.evaluate(element => getComputedStyle(element).transform)).not.toBe(initialTransform);
+  await expect(background).toHaveCSS('opacity', '0.6');
+  const coast = page.locator('.coast-figure');
+  await coast.scrollIntoViewIfNeeded();
+  await expect(coast).toHaveCSS('opacity', '1');
+  await expect(coast).toHaveCSS('transform', 'none');
+  await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+  await coast.scrollIntoViewIfNeeded();
+  await expect(coast).toHaveCSS('opacity', '1');
+  await expect(coast).toHaveCSS('transform', 'none');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await expect(background).toHaveCSS('transform', 'none');
+  await page.locator('.closing-copy').scrollIntoViewIfNeeded();
+  await expect(page.locator('.closing-copy')).toHaveCSS('opacity', '1');
+  await expect(page.locator('.closing-landscape')).toHaveCSS('transform', 'none');
 });
 
 

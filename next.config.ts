@@ -1,7 +1,7 @@
 import type { NextConfig } from 'next';
 const config: NextConfig = {
   serverExternalPackages: ['node:sqlite'],
-  // The landing page uses SVG artwork; keep the unused image optimizer closed.
+  // Artwork is served as pre-sized static assets; keep the unused optimizer closed.
   images: { unoptimized: true },
   async headers() {
     return [{ source: '/(.*)', headers: [

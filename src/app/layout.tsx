@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import './creative-art.css';
+import './atmosphere.css';
 
 const siteUrl = 'https://guildos.design';
 const description = 'An automated design platform powered by specialized AI agents. Bring your own key (BYOK) and let the agents build.';
