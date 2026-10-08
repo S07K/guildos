@@ -1,0 +1,57 @@
+import { WaitlistForm } from '@/components/waitlist-form';
+import { HeroBackdrop } from '@/components/hero-backdrop';
+import { ScrollMotion } from '@/components/scroll-motion';
+import { ProcessArt } from '@/components/process-art';
+import { PixelFormation } from '@/components/pixel-formation';
+
+function Mark() {
+  return <svg viewBox="0 0 28 28" width="25" height="25" fill="none" aria-hidden="true"><rect x="3" y="3" width="15" height="15" rx="5" stroke="currentColor" strokeWidth="1.5" /><rect x="10" y="10" width="15" height="15" rx="5" stroke="currentColor" strokeWidth="1.5" /></svg>;
+}
+
+const specialists = ['Creative direction', 'UX architecture', 'UI design', 'Copywriting', 'Quality & accessibility'];
+const steps = [
+  { number: '01', art: 'brief' as const, title: 'Start with your vision.', description: 'Share your brief, your brand, and what you want to achieve. Every agent starts with the same context.', tag: 'A shared starting point' },
+  { number: '02', art: 'create' as const, title: 'Let your guild create.', description: 'Specialists work together across design, experience, and copy, with room for your feedback at every step.', tag: 'Different skills. One direction.' },
+  { number: '03', art: 'refine' as const, title: 'Make the final call.', description: 'Review the work, refine the details, and decide what moves forward. You stay in creative control.', tag: 'Always human-led' },
+];
+
+export default function Home() {
+  return <div className="site-shell">
+    <a className="skip-link" href="#main">Skip to content</a>
+    <header className="site-header">
+      <a href="/" className="brand" aria-label="GuildOS home"><Mark /><span>guild<span className="brand-os">os</span></span></a>
+      <nav aria-label="Main navigation"><a href="#how-it-works" className="process-link">How it works</a><a href="#join" className="nav-cta">Get early access</a></nav>
+    </header>
+    <main id="main"><ScrollMotion>
+      <section className="hero" aria-labelledby="hero-title">
+        <p className="eyebrow hero-eyebrow"> Independent minds. Shared vision.</p>
+        <h1 id="hero-title">Your next big idea.<br /><span>A whole guild behind it.</span></h1>
+        <p className="hero-description">Your vision, brought to life by a team of AI design agents.<br className="desktop-break" /> One thoughtful workspace. You in creative control.</p>
+        <WaitlistForm />
+        <p className="hero-note"><span className="status-dot" /> Building something thoughtful. Join us early.</p>
+        <a className="hero-explore" href="#how-it-works"><span>From pixels to possibilities.<small>Explore the process</small></span></a>
+        <div className="hero-corners" aria-hidden="true">
+          <div className="hero-pixels"><PixelFormation /></div>
+          <HeroBackdrop />
+        </div>
+      </section>
+
+      <section id="how-it-works" className="workflow-section" aria-labelledby="workflow-heading">
+        <div className="section-intro"><div><p className="eyebrow">Meet your guild</p><h2 id="workflow-heading">A whole team.<br /><span>A simpler process.</span></h2></div><p>From the first idea to the final detail, specialists work in sync so you can focus on the bigger picture.</p></div>
+        <div className="workflow-panel">
+          <div className="panel-top"><span className="workspace-label"><span className="workspace-dot" /> Your creative workspace</span><span className="concept">The GuildOS vision</span></div>
+          <div className="workflow-steps">{steps.map(step => <article className="workflow-step" key={step.number}><span className="step-number">{step.number}</span><ProcessArt kind={step.art} /><h3>{step.title}</h3><p>{step.description}</p><span className="step-tag">{step.tag}</span></article>)}</div>
+          <div className="specialist-row"><span className="specialist-label">Your specialists</span><ul>{specialists.map(name => <li key={name}>{name}</li>)}</ul></div>
+        </div>
+      </section>
+
+      <section className="principles" aria-label="Designed for the way you work">
+        <article><span className="principle-index">01 / CONTEXT</span><h3>Your brand, understood.</h3><p>A shared understanding of your brand and feedback keeps the whole team on the same page.</p></article>
+        <article><span className="principle-index">02 / COLLABORATION</span><h3>Less back and forth.</h3><p>Design, experience, and words come together in one place, with a clear direction from you.</p></article>
+        <article><span className="principle-index">03 / INTENTION</span><h3>More room for the good work.</h3><p>Let agents handle repetitive tasks while you focus on the decisions that make the work yours.</p></article>
+      </section>
+      <section className="closing-cta" aria-labelledby="closing-title"><div className="closing-art" aria-hidden="true"><svg viewBox="0 0 180 80" fill="none"><path d="M10 60C50 60 30 10 70 25S115 80 150 30" stroke="#91a6ba" strokeWidth="1.2" /><path d="M124 30h38m-12-18v36" stroke="#d69077" strokeWidth="1.2" /><circle cx="10" cy="60" r="3" fill="#819c87" /></svg></div><p className="eyebrow">A little less busy. A lot more possibility.</p><h2 id="closing-title">Make space for your next idea.</h2><a href="#join" className="closing-button">Join the waitlist</a></section>
+    </ScrollMotion></main>
+    <footer><a href="/" className="footer-brand">guildos</a><span>Thoughtfully built. Human-led.</span><span>© {new Date().getFullYear()} GuildOS</span></footer>
+  </div>;
+}
