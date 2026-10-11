@@ -24,18 +24,18 @@ export default function Home() {
     <main id="main"><ScrollMotion>
       <section className="hero" aria-labelledby="hero-title">
         <LandscapeImage scene="horizon" className="hero-landscape" priority />
-        <p className="eyebrow hero-eyebrow" data-motion="hero"> Independent minds. Shared vision.</p>
+        <p className="eyebrow hero-eyebrow" data-motion="hero"><span aria-hidden="true" /> Your AI design agency · Early access</p>
         <h1 id="hero-title" data-motion="hero" data-delay="100">Your next big idea.<br /><span>A whole guild behind it.</span></h1>
-        <p className="hero-description" data-motion="hero" data-delay="220">Your vision, brought to life by a team of AI design agents.<br className="desktop-break" /> One thoughtful workspace. You in creative control.</p>
+        <p className="hero-description" data-motion="hero" data-delay="220">From your first brief to thoughtful design and copy.<br className="desktop-break" /> A guild of AI specialists, with you in creative control.</p>
         <WaitlistForm />
-        <p className="hero-note"><span className="status-dot" /> Building something thoughtful. Join us early.</p>
+        <p className="hero-note">For founders, small teams, and the ideas that won’t leave you alone.</p>
         <a className="hero-explore" href="#how-it-works"><span>From pixels to possibilities.<small>Explore the process</small></span></a>
       </section>
 
       <section id="how-it-works" className="workflow-section" aria-labelledby="workflow-heading">
-        <div className="section-intro" data-motion="rise"><div><p className="eyebrow">Meet your guild</p><h2 id="workflow-heading">A whole team.<br /><span>A simpler process.</span></h2></div><p>From the first idea to the final detail, specialists work in sync so you can focus on the bigger picture.</p></div>
+        <div className="section-intro" data-motion="rise"><div><p className="eyebrow">01 / A shared creative process</p><h2 id="workflow-heading">One brief. Many minds.<br /><span>Always your call.</span></h2></div><p>Creative direction, design, and words, working together. A little less coordinating. A lot more creating.</p></div>
         <div className="workflow-panel">
-          <div className="panel-top"><span className="workspace-label"><span className="workspace-dot" /> Your creative workspace</span><span className="concept">The GuildOS vision</span></div>
+          <div className="panel-top"><span className="workspace-label">From the first thought to the final detail</span><span className="concept">The GuildOS vision</span></div>
           <div className="workflow-steps">{steps.map((step, index) => <article className="workflow-step" key={step.number} data-motion="rise" data-delay={index * 120}><span className="step-number">{step.number}</span><ProcessArt kind={step.art} /><h3>{step.title}</h3><p>{step.description}</p><span className="step-tag">{step.tag}</span></article>)}</div>
           <div className="specialist-row"><span className="specialist-label">Your specialists</span><ul>{specialists.map(name => <li key={name}>{name}</li>)}</ul></div>
         </div>
@@ -47,7 +47,7 @@ export default function Home() {
           <figcaption>A little perspective. A world of possibility.</figcaption>
         </figure>
         <div className="calm-copy" data-motion="rise" data-delay="160">
-          <p className="eyebrow">A little room to breathe</p>
+          <p className="eyebrow">02 / A little room to breathe</p>
           <h2 id="calm-heading">Less busywork.<br /><span>More blue sky.</span></h2>
           <p>Great work starts with space to think. Let your guild take on the repetitive parts, so you can follow the ideas that feel like you.</p>
           <p>Set the direction. Explore the possibilities. Make the final call, in your own time.</p>

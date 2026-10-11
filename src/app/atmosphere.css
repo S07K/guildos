@@ -1,5 +1,10 @@
 /* Watercolor landscapes, open space, and the quiet warmth of drawing paper. */
 :root { --paper: #faf8f4; --surface: #f4f3ee; --text: #293e48; --muted: #5d6e75; --accent: #416779; --accent-hover: #315363; --line: #dedfd9; }
+body { font-family: var(--font-sans), sans-serif; }
+.brand { font-weight: 600; letter-spacing: -1.2px; }
+.eyebrow { font-size: 12px; letter-spacing: 1.5px; }
+h1, h2 { text-wrap: balance; }
+.hero h1, .hero h1 > span, .section-intro h2, .section-intro h2 span, .calm-copy h2, .calm-copy h2 span, .closing-cta h2, .coast-figure figcaption { font-family: var(--font-editorial), serif; font-weight: 400; }
 .site-shell { max-width: none; padding: 0; }
 .site-header { position: absolute; z-index: 3; top: 24px; left: 50%; transform: translateX(-50%); width: min(1152px, calc(100% - 64px)); height: 66px; padding: 0 24px; border-radius: 40px; background: #ffffffed; box-shadow: 0 5px 25px #293e4809; }
 .site-header nav { font-size: 14px; gap: 30px; }
@@ -14,48 +19,59 @@
 @media (prefers-reduced-motion: reduce) {
   [data-parallax] { transform: none !important; }
 }
-.hero { min-height: 960px; padding: 164px 24px 54px; overflow: hidden; }
+.hero { min-height: 930px; padding: 166px 24px 48px; overflow: hidden; }
 .hero > .hero-landscape { position: absolute; z-index: -1; inset: auto 0 0; height: 100%; object-position: center bottom; mask-image: linear-gradient(to bottom, transparent 0%, #0003 26%, #000b 56%, #000 72%, #000 90%, transparent 100%); }
-.hero-eyebrow { font-size: 13px; margin-bottom: 25px; color: #456275; }
-.hero h1 { font-size: clamp(48px, 5.4vw, 78px); letter-spacing: -3px; }
-.hero h1 > span { color: #416779; }
-.hero-description { color: #455b66; font-size: 17px; max-width: 580px; margin: 25px 0 26px; }
-.waitlist { max-width: 490px; }
-input[type=email] { border-radius: 10px; border-color: #ccd6d8; padding: 17px 18px; background: #ffffffed; }
+.hero-eyebrow { font-size: 12px; margin-bottom: 30px; color: #456275; }
+.hero h1 { font-size: clamp(58px, 6.6vw, 94px); letter-spacing: -2.8px; line-height: 1.02; }
+.hero h1 > span { color: #416779; letter-spacing: -2.8px; }
+.hero-description { color: #455b66; font-size: 18px; max-width: 600px; margin: 27px 0 30px; line-height: 1.65; }
+.waitlist { max-width: 510px; }
+.email-row { padding: 5px; gap: 5px; background: #fffffff0; border: 1px solid #d4dedf; border-radius: 15px; box-shadow: 0 8px 28px #293e4806; }
+input[type=email] { border-radius: 10px; border-color: transparent; padding: 15px 14px; background: transparent; font-size: 15px; }
 button, .closing-button { border-radius: 10px; font-size: 14px; padding: 17px 20px; }
 .form-note { font-size: 12px; color: #455b66; }
-.hero-note { color: #455b66; font-size: 12px; }
+.hero-note { color: #455b66; font-size: 12px; max-width: 390px; line-height: 1.6; margin-top: 22px; }
 .hero-explore { align-self: center; margin-top: auto; padding-top: 125px; text-align: center; font-size: 14px; color: #324e5e; }
 .hero-explore small { margin-top: 4px; }
 .workflow-section, .principles, footer { width: min(1152px, calc(100% - 80px)); margin-inline: auto; }
-.workflow-section { border-top: 0; padding-top: 78px; }
-.section-intro { margin-bottom: 38px; }
-.section-intro h2 { font-size: clamp(34px, 3.5vw, 46px); }
-.section-intro h2 span { font-family: Georgia, 'Times New Roman', serif; font-style: italic; color: var(--accent); }
+.workflow-section { border-top: 0; padding-top: 90px; }
+.section-intro { margin-bottom: 44px; }
+.section-intro h2 { font-size: clamp(40px, 4.2vw, 58px); line-height: 1.08; letter-spacing: -1.4px; }
+.section-intro h2 span { font-style: italic; color: var(--accent); }
 .section-intro > p { font-size: 15px; max-width: 340px; }
-.workflow-panel { background: #fdfcf9; border-radius: 18px; border-color: var(--line); }
-.panel-top { background: #f0f1eb; }
+.workflow-panel { background: transparent; border-radius: 0; border: 0; }
+.panel-top { background: transparent; padding: 17px 0; border-top: 1px solid var(--line); }
+.workflow-step { padding: 30px 30px 36px; }
+.workflow-step:first-child { padding-left: 0; }
+.workflow-step:last-child { padding-right: 0; }
+.workflow-step h3 { font-size: 20px; letter-spacing: -.5px; }
+.step-number { font-family: var(--font-editorial), serif; font-size: 26px; font-style: italic; color: #718294; }
+.process-art { margin-top: 8px; height: 170px; }
+.specialist-row { padding: 22px 0; gap: 32px; }
+.specialist-row ul { gap: 8px; }
+.specialist-row li { padding: 7px 12px; border: 1px solid #dde3de; border-radius: 24px; background: #f1f3ee; }
 .workflow-step p, .principles p { font-size: 14px; }
 .workspace-label, .specialist-row li, .specialist-label, .step-tag { font-size: 12px; }
 .calm-section { display: grid; grid-template-columns: 1.15fr 1fr; align-items: center; gap: clamp(35px, 6vw, 100px); width: min(1280px, calc(100% - 80px)); margin: 110px auto 0; border-radius: 0; background: transparent; overflow: visible; }
 .coast-figure { margin: 0; min-width: 0; }
 .coast-figure .landscape-image { height: 540px; border-radius: 48% 48% 8px 8px; object-position: 45% center; }
-.coast-figure figcaption { font-family: Georgia, 'Times New Roman', serif; font-style: italic; font-size: 15px; color: var(--muted); text-align: center; margin-top: 17px; }
+.coast-figure figcaption { font-style: italic; font-size: 18px; color: var(--muted); text-align: center; margin-top: 20px; }
 .calm-copy { padding: 0 24px 25px 0; max-width: 450px; }
 .calm-copy .eyebrow { margin-bottom: 23px; font-size: 12px; }
-.calm-copy h2 { font-size: clamp(38px, 4vw, 56px); line-height: 1.1; letter-spacing: -1.8px; }
-.calm-copy h2 span { font-family: Georgia, 'Times New Roman', serif; font-style: italic; color: var(--accent); }
+.calm-copy h2 { font-size: clamp(44px, 4.8vw, 66px); line-height: 1.02; letter-spacing: -1.8px; }
+.calm-copy h2 span { font-style: italic; color: var(--accent); }
 .calm-copy > p:not(.eyebrow) { font-size: 16px; line-height: 1.9; color: var(--muted); margin: 24px 0 0; }
 .quiet-link { display: inline-flex; align-items: center; min-height: 44px; margin-top: 23px; color: var(--accent); font-size: 14px; text-decoration: underline; text-underline-offset: 6px; text-decoration-color: #a1b5ba; }
 .quiet-link:hover { text-decoration-color: currentColor; }
 .principles { padding-block: 90px 95px; gap: 65px; }
-.principle-index { font-size: 11px; }
+.principles article { border-top: 1px solid var(--line); padding-top: 22px; }
+.principle-index { font-size: 11px; letter-spacing: 1.4px; }
 .principles h3 { font-size: 18px; }
 .closing-cta { position: relative; isolation: isolate; overflow: hidden; border: 0; min-height: 690px; padding: 80px 24px 300px; }
 .closing-scenery { position: absolute; z-index: -1; inset: 0; overflow: hidden; pointer-events: none; mask-image: linear-gradient(to bottom, transparent, #0008 23%, #000 47%, #000 75%, #0005 92%, #0003); }
 .closing-landscape { position: absolute; inset: 0; object-position: center 58%; }
 .closing-copy { position: relative; }
-.closing-cta h2 { font-size: clamp(40px, 4.6vw, 62px); color: var(--text); line-height: 1.08; font-style: normal; }
+.closing-cta h2 { font-size: clamp(48px, 5.4vw, 76px); color: var(--text); line-height: 1.02; font-style: normal; letter-spacing: -1.8px; }
 .closing-cta h2 span { color: var(--accent); font-style: italic; }
 .closing-copy > p:not(.eyebrow) { font-size: 16px; color: #455b66; margin: 23px 0 0; }
 .closing-button { margin-top: 25px; border-radius: 30px; padding-inline: 28px; }
@@ -75,30 +91,38 @@ footer { position: relative; z-index: 1; min-height: 84px; margin-top: -84px; pa
   .nav-cta { padding: 11px 15px; font-size: 12px; }
   .hero { min-height: 920px; padding: 127px 23px 45px; }
   .hero > .hero-landscape { height: 68%; object-position: 40% bottom; mask-image: linear-gradient(to bottom, transparent, #0005 20%, #000 65%, #000 85%, transparent); }
-  .hero h1 { font-size: clamp(38px, 9.6vw, 56px); letter-spacing: -1.8px; }
+  .hero h1 { font-size: clamp(43px, 11vw, 68px); letter-spacing: -1.6px; line-height: 1.04; }
   .hero h1 > span { letter-spacing: -1.7px; }
-  .hero-eyebrow { font-size: 11px; margin-bottom: 25px; }
-  .hero-description { font-size: 15px; margin: 22px 0 24px; }
+  .hero-eyebrow { font-size: 10px; letter-spacing: 1px; margin-bottom: 25px; }
+  .hero-description { font-size: 16px; margin: 24px 0 26px; }
+  .email-row { padding: 6px; gap: 6px; }
+  input[type=email] { font-size: 16px; padding: 15px 12px; }
   .hero-note { font-size: 11px; }
   .form-note { font-size: 11px; }
   .hero-explore { padding-top: 100px; font-size: 14px; }
   .workflow-section, .principles, footer { width: calc(100% - 44px); }
   .workflow-section { padding-top: 45px; }
   .section-intro { gap: 20px; }
-  .section-intro h2 { font-size: 34px; }
+  .section-intro h2 { font-size: 40px; }
+  .workflow-step, .workflow-step:first-child, .workflow-step:last-child { padding: 28px 6px; }
+  .process-art { margin-top: 12px; }
+  .specialist-row { padding: 22px 0; gap: 15px; }
+  .specialist-row ul { gap: 8px; }
+  .panel-top { align-items: start; gap: 20px; }
+  .panel-top .workspace-label { max-width: 170px; }
   .concept { font-size: 10px; }
   .workspace-label { font-size: 11px; }
   .calm-section { width: calc(100% - 44px); grid-template-columns: 1fr; gap: 35px; margin-top: 64px; }
   .coast-figure .landscape-image { height: 390px; }
-  .coast-figure figcaption { font-size: 13px; }
+  .coast-figure figcaption { font-size: 16px; }
   .calm-copy { padding: 0 4px; max-width: none; }
   .calm-copy .eyebrow { margin-bottom: 16px; }
-  .calm-copy h2 { font-size: 40px; }
+  .calm-copy h2 { font-size: 49px; }
   .calm-copy > p:not(.eyebrow) { font-size: 15px; margin-top: 18px; }
   .principles { padding-block: 55px 45px; gap: 30px; }
   .closing-cta { min-height: 650px; padding: 65px 22px 270px; }
   .closing-landscape { object-position: 73% center; }
-  .closing-cta h2 { font-size: 41px; }
+  .closing-cta h2 { font-size: 48px; }
   .closing-copy > p:not(.eyebrow) { font-size: 14px; }
   .closing-cta .eyebrow { font-size: 11px; }
 }
