@@ -1,6 +1,6 @@
-# GuildOS · Phase 1
+# GuildOS
 
-A Next.js App Router + TypeScript + Tailwind CSS waitlist landing page. Node.js **24+** is required for the built-in SQLite driver.
+A Next.js App Router + TypeScript waitlist and private landing-page studio. The marketing site uses Tailwind CSS; the workspace uses MUI with its Next.js App Router cache integration and a shared theme. Node.js **24+** is required for the built-in SQLite driver.
 
 ## Run locally
 
@@ -22,7 +22,7 @@ npm run build
 Follow the [step-by-step setup guide](docs/setup.md) for the exact migration order, Vercel environment values, dependency update command, and preview checks.
 
 1. Finish the browser and dependency checks described in [predeploy checks](docs/predeploy-checks.md). They require no Supabase credentials.
-2. Before the first functional preview, create a Supabase project and apply **both** SQL files in `supabase/migrations/`, in filename order, using its SQL editor or migration tooling. The second migration is required for rate limiting.
+2. Before the first functional waitlist preview, create a Supabase project and apply the two waitlist SQL migrations in `supabase/migrations/`, in filename order, using its SQL editor or migration tooling. The second migration is required for rate limiting. The separate studio migration is covered in the guide below.
 3. In Vercel, select Node.js 24 and add `SUPABASE_URL` (your project URL) and `SUPABASE_SECRET_KEY` (server-only `sb_secret_` key) to the Preview environment. Existing legacy keys also work through `SUPABASE_SERVICE_ROLE_KEY` when `SUPABASE_SECRET_KEY` is unset. Production automatically selects Supabase; do not select SQLite on Vercel. Never prefix either server key with `NEXT_PUBLIC_`.
 4. Leave `NEXT_PUBLIC_APP_URL` unset for Preview so origin checks use the preview request URL. For Production, set it to your canonical origin, e.g. `https://guildos.design`, and add the Supabase variables there too. Do not carry `http://localhost:3000` from `.env.example` into Vercel. Redeploy after changing environment variables.
 5. Deploy a preview and perform the live checks below before promoting it. Missing credentials, missing migrations, or database failures return 503; the UI does not claim success.
@@ -39,9 +39,17 @@ SQLite is also usable on a persistent single-server deployment by explicitly sel
 
 ## Scope
 
-This release captures launch interest only. The agency workflow graphic is explicitly a concept preview. Agent execution, workspace authentication, provider vaults, project memory, telemetry, and Figma export belong to later phases.
+The public site captures launch interest. The private studio adds email-code authentication, isolated projects, encrypted OpenAI keys, structured landing-page generation, revisions, version history, previews, and HTML export. Follow the [studio setup guide](docs/studio-setup.md) before opening `/signin`; it requires the studio migrations, authentication configuration, and a vault encryption secret. With an OpenAI API key, five specialist stages leave project-scoped review notes that can mention another role; user comments and earlier discussion are read on the next run. Shared vector memory, multi-user collaboration, and Figma export remain future work.
 
 See `docs/design-references.md` for the current minimal visual direction and references. Unit/integration tests exercise real SQLite persistence, concurrent rate limiting, and the Supabase HTTP contract. PGlite (a test-only PostgreSQL WASM dependency) validates both migrations, duplicate constraints, function behavior, and denied public access. These do not establish connectivity to a live Supabase project.
+
+## Studio editing
+
+The dashboard manages projects, model connections, and usage. Opening a project launches a dedicated canvas workspace with collapsible layer and design panels, a bottom tool dock, AI revisions, version history, zoom, and canvas panning. You can begin with a blank canvas and draw, edit, move, resize, duplicate, and save layers without connecting a model.
+
+Generate a draft, select a section in **Layers**, and edit its copy in **Design**. **Page settings** provides typography and palette presets. Changes update the preview immediately. **Save changes** creates an immutable manual version with zero model tokens; it uses the existing studio migration and needs no additional Supabase setup. Undo and redo are available before saving. AI revisions save pending manual changes before sending the selected version and feedback to the provider.
+
+Generated landing pages use a structured editing schema. Blank canvas projects support manual vector shapes and text with freeform positioning. Arbitrary CSS, asset import, and Figma export remain outside this editor's current scope.
 
 ## Browser checks
 

@@ -5,7 +5,7 @@ export default function robots(): MetadataRoute.Robots {
     rules: {
       userAgent: '*',
       allow: '/',
-      disallow: '/api/',
+      disallow: ['/api/', '/studio', '/signin'],
     },
     sitemap: 'https://guildos.design/sitemap.xml',
   };

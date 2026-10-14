@@ -43,12 +43,12 @@ h1 span { color: var(--accent); }
 .hero-description { font-size: 17px; line-height: 1.8; color: var(--muted); margin: 25px 0 30px; max-width: 550px; }
 .waitlist { width: 100%; max-width: 465px; scroll-margin-top: 30px; }
 .email-row { display: flex; gap: 8px; }
-input[type=email] { width: 100%; min-width: 0; border: 1px solid #dce2e8; background: white; color: var(--text); padding: 15px 16px; border-radius: 6px; font-size: 14px; }
-input[type=email]:focus { outline: 2px solid #526e912b; outline-offset: 1px; border-color: var(--accent); }
+ .waitlist input[type=email] { width: 100%; min-width: 0; border: 1px solid #dce2e8; background: white; color: var(--text); padding: 15px 16px; border-radius: 6px; font-size: 14px; }
+ .waitlist input[type=email]:focus { outline: 2px solid #526e912b; outline-offset: 1px; border-color: var(--accent); }
 input::placeholder { color: #7d8792; }
-button, .closing-button { background: var(--accent); color: white; padding: 15px 18px; border: 0; border-radius: 6px; font-size: 13px; font-weight: 500; white-space: nowrap; cursor: pointer; transition: background .2s; }
-button:hover, .closing-button:hover { background: var(--accent-hover); }
-button:disabled { opacity: .65; cursor: wait; }
+.waitlist button, .closing-button { background: var(--accent); color: white; padding: 15px 18px; border: 0; border-radius: 6px; font-size: 13px; font-weight: 500; white-space: nowrap; cursor: pointer; transition: background .2s; }
+.waitlist button:hover, .closing-button:hover { background: var(--accent-hover); }
+.waitlist button:disabled { opacity: .65; cursor: wait; }
 .form-note { margin: 13px 0 0; color: var(--muted); font-size: 11px; line-height: 1.7; }
 .form-error { color: #a53535; font-size: 13px; line-height: 1.6; margin: 10px 0 0; text-align: left; }
 .form-error:empty { margin: 0; }
@@ -110,8 +110,8 @@ footer { display: flex; justify-content: space-between; gap: 20px; align-items: 
   .hero-description { font-size: 15px; max-width: 360px; margin: 22px 0 27px; }
   .desktop-break { display: none; }
   .email-row { flex-direction: column; }
-  input[type=email] { font-size: 17px; }
-  button { padding: 15px; font-size: 14px; }
+   .waitlist input[type=email] { font-size: 17px; }
+  .waitlist button { padding: 15px; font-size: 14px; }
   .hero-note { font-size: 10px; }
   .scroll-cue { margin-top: 30px; }
   .workflow-section { padding-top: 40px; }
