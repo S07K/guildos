@@ -1,3 +1,5 @@
+'use client';
+
 import { BotAvatar, type BotAvatarState, type BotAvatarType } from 'bot-avatars';
 import { Box, Stack, Typography } from '@mui/material';
 import { agentIdentity, agentRoles, type AgentRole } from '@/lib/studio/agent-roles';
