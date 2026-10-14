@@ -150,7 +150,6 @@ test('manual design creates real layers, supports transforms and zoom, and persi
  await page.goto('/signin');await page.getByLabel('Email address').fill('studio-test@example.com');await page.getByRole('button',{name:'Send sign-in code'}).click();await page.getByLabel('Email code').fill('123456');await page.getByRole('button',{name:'Enter your studio'}).click();
  await page.getByRole('link',{name:'New project',exact:true}).click();await page.getByLabel('Project name').fill('Manual studio');await page.getByLabel('Your creative brief').fill('A manually designed landing page for independent designers.');await page.getByLabel('Primary button destination').fill('https://example.com');await page.getByRole('button',{name:'Create project',exact:true}).click();
  await expect(page.getByText('No layers yet. Start a blank canvas or generate a first draft.')).toBeVisible();
- await page.getByRole('button',{name:'Start blank canvas',exact:true}).click();
  await page.getByRole('button',{name:'Rectangle tool',exact:true}).click();
  const canvas=page.getByTestId('manual-canvas');const box=await canvas.boundingBox();expect(box).not.toBeNull();
  await page.mouse.move(box!.x+40,box!.y+40);await page.mouse.down();await page.mouse.move(box!.x+240,box!.y+150,{steps:5});await page.mouse.up();
