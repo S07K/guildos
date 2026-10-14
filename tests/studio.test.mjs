@@ -30,6 +30,13 @@ test('renderer escapes model content and restricts destinations and page themes'
  assert.throws(() => renderDesign({ ...design, features: [] }, 'https://example.com'));
 });
 
+test('generated design sections can be reordered safely', () => {
+ const html=renderDesign({...design,sectionOrder:['features','closing','hero']},'https://example.com');
+ const positions=['class="features"','class="closing"','class="hero"'].map(section=>html.indexOf(section));
+ assert.ok(positions[0]>=0&&positions[0]<positions[1]&&positions[1]<positions[2]);
+ assert.throws(()=>renderDesign({...design,sectionOrder:['hero','hero','closing']},'https://example.com'));
+});
+
 test('generation and revision send the correct context, validate output, and retain actual token usage', async () => {
  let payload;
  const request = async (url, options) => {
