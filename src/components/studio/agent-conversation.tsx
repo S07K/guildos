@@ -1,14 +1,14 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Box, Button, Chip, Divider, Drawer, IconButton, List, ListItemButton, ListItemText, Stack, TextField, Typography } from '@mui/material';
-import CloseOutlined from '@mui/icons-material/CloseOutlined';
-import SendOutlined from '@mui/icons-material/SendOutlined';
+import { X as CloseOutlined } from 'lucide-react';
+import { Send as SendOutlined } from 'lucide-react';
 import { agentIdentity, agentRoles, type AgentRole } from '@/lib/studio/agent-roles';
 import { AgentMark } from './agent-identity';
 
 type Message = { id: string; author_kind: 'human'|'agent'; body: string; created_at: string; input_tokens?: number; output_tokens?: number; model?: string };
 export function AgentConversation({ projectId, role, open, onClose, onSelectRole, onApplyDirection }: { projectId: string; role: AgentRole; open: boolean; onClose: () => void; onSelectRole: (role: AgentRole) => void; onApplyDirection: (text: string) => void }) {
- const [messages, setMessages] = useState<Message[]>([]), [text, setText] = useState(''), [error, setError] = useState(''), [loading, setLoading] = useState(false);
+ const [messages, setMessages] = useState<Message[]>([]), [text, setText] = useState(''), [error, setError] = useState(''), [notice, setNotice] = useState(''), [loading, setLoading] = useState(false);
  const end = useRef<HTMLDivElement>(null); const identity = agentIdentity[role];
  useEffect(() => {
   if (!open) return;
@@ -27,6 +27,7 @@ export function AgentConversation({ projectId, role, open, onClose, onSelectRole
    const response = await fetch(`/api/studio/agents/${role}/messages?projectId=${encodeURIComponent(projectId)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: message }) });
    const data = await response.json(); if (!response.ok) throw new Error(data.error || `${identity.persona} could not reply.`);
    setMessages(items => [...items, ...data.messages]); setText('');
+   if (data.switchedFrom) setNotice(`Usage limit reached. Continued with ${data.usage?.model?.startsWith('chatgpt/') ? 'your ChatGPT plan' : 'your OpenAI API key'}.`);
   } catch (cause) { setError(cause instanceof Error ? cause.message : 'The agent could not reply.'); }
   finally { setLoading(false); }
  }
@@ -43,6 +44,7 @@ export function AgentConversation({ projectId, role, open, onClose, onSelectRole
      <div ref={end}/>
     </Box>
     {error && <Alert severity="error" sx={{ mx: 2, mb: 1 }}>{error}</Alert>}
+    {notice && <Alert severity="success" onClose={() => setNotice('')} sx={{ mx: 2, mb: 1 }}>{notice}</Alert>}
     <Divider/>
     <Stack direction="row" spacing={1} sx={{ p: 2, alignItems: 'flex-end' }}><TextField fullWidth multiline minRows={2} maxRows={6} label={`Message ${identity.persona}`} value={text} onChange={event => setText(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send(); } }} placeholder="Ask about this project…" slotProps={{ htmlInput: { maxLength: 4000 } }}/><IconButton color="primary" aria-label={`Send message to ${identity.persona}`} disabled={!text.trim() || loading} onClick={() => void send()} sx={{ width: 48, height: 48, borderRadius: 2, bgcolor: 'primary.main', color: 'white', '&:hover': { bgcolor: 'primary.dark' }, '&.Mui-disabled': { bgcolor: 'action.disabledBackground' } }}><SendOutlined/></IconButton></Stack>
     <Typography variant="caption" color="text.secondary" sx={{ px: 2, pb: 1.5 }}>Replies use your connected provider. Enter to send · Shift + Enter for a new line.</Typography>

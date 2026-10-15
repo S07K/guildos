@@ -1,4 +1,5 @@
 import { agentIdentity, type AgentRole } from './agent-roles';
+import { ProviderCapacityError } from './provider-fallback.ts';
 
 type Usage = { input_tokens: number; output_tokens: number };
 type OpenAIResult = { status?: string; model?: string; usage?: Usage; output?: { type: string; content?: { type: string; text?: string }[] }[] };
@@ -21,7 +22,7 @@ export async function replyAsAgent(input: { key: string; role: AgentRole; brief:
  });
  if (!response.ok) {
   if ([401, 403].includes(response.status)) throw new Error('OpenAI rejected your key or model access. Update your connection.');
-  if (response.status === 429) throw new Error('OpenAI quota or rate limit reached. Check your OpenAI billing.');
+  if (response.status === 429) throw new ProviderCapacityError('api', 'OpenAI usage limit reached.');
   throw new Error('The agent could not reply. Please try again.');
  }
  const result = await response.json() as OpenAIResult;
@@ -38,7 +39,10 @@ export async function replyAsChatGPT(input: { workspace: string; role: AgentRole
   signal: AbortSignal.timeout(100000),
  });
  const result = await response.json();
- if (!response.ok) throw new Error(typeof result.error === 'string' && result.error.startsWith('ChatGPT') ? result.error : 'The agent could not reply through ChatGPT. Reconnect or try again.');
+ if (!response.ok) {
+  if (response.status === 429 || (typeof result.error === 'string' && /quota|rate.?limit|usage.?limit|limit.?reached|exhaust/i.test(result.error))) throw new ProviderCapacityError('chatgpt', 'ChatGPT plan usage limit reached.');
+  throw new Error(typeof result.error === 'string' && result.error.startsWith('ChatGPT') ? result.error : 'The agent could not reply through ChatGPT. Reconnect or try again.');
+ }
  if (typeof result.reply !== 'string' || !result.reply.trim() || result.reply.length > 4000 || !Number.isSafeInteger(result.input_tokens) || result.input_tokens < 0 || !Number.isSafeInteger(result.output_tokens) || result.output_tokens < 0 || typeof result.model !== 'string' || !result.model.startsWith('chatgpt/')) throw new Error('ChatGPT returned an invalid agent reply.');
  return { reply: result.reply.trim(), model: result.model, input_tokens: result.input_tokens, output_tokens: result.output_tokens };
 }

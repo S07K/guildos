@@ -1,5 +1,6 @@
 import { designSchema, validateDesign } from './design.mjs';
 import { agentRoles, type AgentRole, type AgentAnchor } from './agent-roles.ts';
+import { ProviderCapacityError } from './provider-fallback.ts';
 
 export type AgentNote = { author_role: AgentRole; mentioned_role: AgentRole | null; anchor: AgentAnchor; body: string };
 type Usage = { input_tokens: number; output_tokens: number };
@@ -25,7 +26,7 @@ async function ask(key: string, model: string, instructions: string, input: unkn
  });
  if (!response.ok) {
   if ([401,403].includes(response.status)) throw new Error('OpenAI rejected your key or model access. Update your connection.');
-  if (response.status === 429) throw new Error('OpenAI quota or rate limit reached. Check your OpenAI billing.');
+  if (response.status === 429) throw new ProviderCapacityError('api', 'OpenAI usage limit reached.');
   throw new Error('OpenAI could not complete a guild review. Please try again.');
  }
  const result = await response.json() as ResponseResult;

@@ -2,12 +2,14 @@ import { adminClient, authConfig, sessionClient } from '@/lib/studio/supabase';
 import { agentRoles } from '@/lib/studio/agent-roles';
 
 export const runtime = 'nodejs';
-const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const anchors = ['page', 'header', 'hero', 'features', 'closing', 'footer'];
 const json = (body: object, status = 200) => Response.json(body, { status, headers: { 'Cache-Control': 'private, no-store' } });
 
 async function projectFor(client: Awaited<ReturnType<typeof sessionClient>>, id: string) {
- const { data } = await client.from('studio_projects').select('id,workspace_id').eq('id', id).single();
+ // Use the same RLS-protected project lookup as the editor page so all owned
+ // workspaces are handled consistently without a separate workspace assumption.
+ const { data } = await client.from('studio_projects').select('id,workspace_id').eq('id', id).maybeSingle();
  return data;
 }
 
@@ -17,7 +19,10 @@ export async function GET(request: Request) {
  const { data: { user } } = await client.auth.getUser();
  if (!user) return json({ error: 'Your session expired. Sign in again.' }, 401);
  const projectId = new URL(request.url).searchParams.get('projectId');
- if (!projectId || !uuid.test(projectId) || !await projectFor(client, projectId)) return json({ error: 'Project not found.' }, 404);
+ if (!projectId || !uuid.test(projectId)) return json({ error: 'Invalid project.' }, 400);
+ // The notes query is already constrained by workspace RLS. Avoid a separate
+ // project lookup here; it can disagree with the editor's project access and
+ // incorrectly show "Project not found" just from opening the conversation.
  const { data, error } = await client.from('studio_agent_notes').select('*').eq('project_id', projectId).order('created_at', { ascending: true }).limit(200);
  if (error) return json({ error: 'The guild discussion could not be loaded. Apply the latest Supabase migration.' }, 503);
  return json({ notes: data || [] });

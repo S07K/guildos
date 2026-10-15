@@ -15,7 +15,13 @@ export async function generateWithWorker(worker: Worker, input: { brief: string;
   if (!params || params.threadId !== thread.id) return;
   if (message.method === 'item/completed' && params.item?.type === 'agentMessage' && (!params.item.phase || params.item.phase === 'final_answer')) output = params.item.text;
   if (message.method === 'thread/tokenUsage/updated') usage = params.tokenUsage?.last || params.tokenUsage?.total || null;
-  if (message.method === 'turn/completed') params.turn?.status === 'completed' ? finish() : fail(new Error('ChatGPT could not finish this design. Please retry or reconnect.'));
+  if (message.method === 'turn/completed') {
+   if (params.turn?.status === 'completed') finish();
+   else {
+    const detail = JSON.stringify(params.turn?.error || params.turn?.status || '');
+    fail(new Error(/quota|rate.?limit|usage.?limit|limit.?reached|exhaust/i.test(detail) ? 'ChatGPT plan usage limit reached.' : 'ChatGPT could not finish this design. Please retry or reconnect.'));
+   }
+  }
  };
  worker.listeners.add(listener);
  const timer = setTimeout(() => fail(new Error('ChatGPT generation timed out. Please try again.')), 90000);
@@ -45,7 +51,7 @@ export async function chatWithWorker(worker: Worker, input: { role: string; brie
  let output='', usage:{inputTokens:number;outputTokens:number}|null=null;
  let finish!:()=>void, fail!:(error:Error)=>void;
  const completed=new Promise<void>((resolve,reject)=>{finish=resolve;fail=reject;});void completed.catch(()=>{});
- const listener=(message:Message)=>{const params=message.params;if(!params||params.threadId!==thread.id)return;if(message.method==='item/completed'&&params.item?.type==='agentMessage'&&(!params.item.phase||params.item.phase==='final_answer'))output=params.item.text;if(message.method==='thread/tokenUsage/updated')usage=params.tokenUsage?.last||params.tokenUsage?.total||null;if(message.method==='turn/completed')params.turn?.status==='completed'?finish():fail(new Error('ChatGPT could not finish this reply. Please retry or reconnect.'));};
+ const listener=(message:Message)=>{const params=message.params;if(!params||params.threadId!==thread.id)return;if(message.method==='item/completed'&&params.item?.type==='agentMessage'&&(!params.item.phase||params.item.phase==='final_answer'))output=params.item.text;if(message.method==='thread/tokenUsage/updated')usage=params.tokenUsage?.last||params.tokenUsage?.total||null;if(message.method==='turn/completed'){if(params.turn?.status==='completed')finish();else{const detail=JSON.stringify(params.turn?.error||params.turn?.status||'');fail(new Error(/quota|rate.?limit|usage.?limit|limit.?reached|exhaust/i.test(detail)?'ChatGPT plan usage limit reached.':'ChatGPT could not finish this reply. Please retry or reconnect.'));}}};
  worker.listeners.add(listener);const timer=setTimeout(()=>fail(new Error('ChatGPT agent reply timed out. Please try again.')),90000);
  try {
   await worker.send('turn/start',{threadId:thread.id,input:[{type:'text',text:JSON.stringify({brief:input.brief,document:input.document,notes:input.notes,messages:input.messages})}],approvalPolicy:'never',permissionProfile:{type:'readOnly'}});

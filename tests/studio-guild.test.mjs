@@ -3,8 +3,31 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { PGlite } from '@electric-sql/pglite';
 import { runGuild } from '../src/lib/studio/guild.ts';
+import { ProviderCapacityError, withProviderFallback } from '../src/lib/studio/provider-fallback.ts';
 
 const design = { brand: 'Cove', eyebrow: 'Space to think', headline: 'Good work starts here.', description: 'A studio for small creative teams.', cta: 'Book a visit', style: 'editorial', palette: 'ocean', features: [{ title: 'Space', description: 'Room for your work.' }, { title: 'Community', description: 'Meet other makers.' }, { title: 'Focus', description: 'Quiet when you need it.' }], closingTitle: 'Find your space.', closingDescription: 'Come see the studio.', designNotes: 'A quiet editorial direction.' };
+
+test('provider fallback retries a connected alternative only after a capacity error', async () => {
+ const calls = [];
+ const result = await withProviderFallback({ preferred: 'api', available: { api: true, chatgpt: true }, run: async provider => {
+  calls.push(provider);
+  if (provider === 'api') throw new ProviderCapacityError('api', 'OpenAI usage limit reached.');
+  return 'completed';
+ } });
+ assert.deepEqual(calls, ['api', 'chatgpt']);
+ assert.equal(result.value, 'completed');
+ assert.equal(result.provider, 'chatgpt');
+ assert.equal(result.switchedFrom, 'api');
+});
+
+test('provider fallback leaves non-capacity failures alone', async () => {
+ const calls = [];
+ await assert.rejects(withProviderFallback({ preferred: 'api', available: { api: true, chatgpt: true }, run: async provider => {
+  calls.push(provider);
+  throw new Error('The API key is invalid.');
+ } }), /API key is invalid/);
+ assert.deepEqual(calls, ['api']);
+});
 
 test('guild runs distinct specialist stages, passes prior review into design, and totals usage', async () => {
  const calls = [];
