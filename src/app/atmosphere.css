@@ -104,7 +104,7 @@ footer { position: relative; z-index: 1; min-height: 84px; margin-top: -84px; pa
   .hero-eyebrow { font-size: 10px; letter-spacing: 1px; margin-bottom: 25px; }
   .hero-description { font-size: 16px; margin: 24px 0 26px; }
   .waitlist-perch { margin-top: 25px; }
-  .waitlist-perch-mascots { top: 24px; right: 12px; width: 165px; }
+  .waitlist-perch-mascots { top: -32px; right: 12px; width: 165px; }
   .waitlist-perch-mascots > span { width: 34px; height: 34px; }
   .email-row { padding: 6px; gap: 6px; }
   input[type=email] { font-size: 16px; padding: 15px 12px; }
