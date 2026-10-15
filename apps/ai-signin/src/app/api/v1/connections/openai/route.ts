@@ -1,6 +1,6 @@
-import { database } from '@/lib/database';
-import { serviceAuthorized, unauthorized } from '@/lib/service-auth';
-import { openaiProvider } from '@/providers/openai';
+import { database } from '../../../../../lib/database';
+import { serviceAuthorized, unauthorized } from '../../../../../lib/service-auth';
+import { openaiProvider } from '../../../../../providers/openai';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

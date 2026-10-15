@@ -1,4 +1,4 @@
-import { openaiProvider } from '@/providers/openai';
+import { openaiProvider } from '../../../../providers/openai';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
-import { database } from '@/lib/database';
-import { open, seal } from '@/lib/vault';
-import { openaiProvider } from '@/providers/openai';
+import { database } from '../../../../../lib/database';
+import { open, seal } from '../../../../../lib/vault';
+import { openaiProvider } from '../../../../../providers/openai';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
