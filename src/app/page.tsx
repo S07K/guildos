@@ -2,12 +2,21 @@ import { WaitlistForm } from '@/components/waitlist-form';
 import { ScrollMotion } from '@/components/scroll-motion';
 import { ProcessArt } from '@/components/process-art';
 import { LandscapeImage } from '@/components/landscape-image';
+import { AgentMark } from '@/components/studio/agent-identity';
+import { AiProviderMark } from '@/components/ai-provider-mark';
+import type { AgentRole } from '@/lib/studio/agent-roles';
 
 function Mark() {
-  return <svg viewBox="0 0 28 28" width="25" height="25" fill="none" aria-hidden="true"><rect x="3" y="3" width="15" height="15" rx="5" stroke="currentColor" strokeWidth="1.5" /><rect x="10" y="10" width="15" height="15" rx="5" stroke="currentColor" strokeWidth="1.5" /></svg>;
+  return <svg viewBox="0 0 32 32" width="32" height="32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#315b46"/><g fill="#f4f8f4"><rect x="6" y="6" width="8" height="8" rx="2"/><rect x="18" y="6" width="8" height="10" rx="2"/><rect x="6" y="18" width="10" height="8" rx="2"/></g><rect x="20" y="20" width="6" height="6" rx="2" fill="#a8c981"/></svg>;
 }
 
-const specialists = ['Creative direction', 'UX architecture', 'UI design', 'Copywriting', 'Quality & accessibility'];
+const specialists: { name: string; role: AgentRole }[] = [
+  { name: 'Creative direction', role: 'creative_director' },
+  { name: 'UX architecture', role: 'ux_architect' },
+  { name: 'UI design', role: 'ui_designer' },
+  { name: 'Copywriting', role: 'copywriter' },
+  { name: 'Quality & accessibility', role: 'qa_critic' },
+];
 const steps = [
   { number: '01', art: 'brief' as const, title: 'Start with your vision.', description: 'Share your brief, your brand, and what you want to achieve. Every agent starts with the same context.', tag: 'A shared starting point' },
   { number: '02', art: 'create' as const, title: 'Let your guild create.', description: 'Specialists work together across design, experience, and copy, with room for your feedback at every step.', tag: 'Different skills. One direction.' },
@@ -27,7 +36,12 @@ export default function Home() {
         <p className="eyebrow hero-eyebrow" data-motion="hero"><span aria-hidden="true" /> Your AI design agency · Early access</p>
         <h1 id="hero-title" data-motion="hero" data-delay="100">Your next big idea.<br /><span>A whole guild behind it.</span></h1>
         <p className="hero-description" data-motion="hero" data-delay="220">From your first brief to thoughtful design and copy.<br className="desktop-break" /> A guild of AI specialists, with you in creative control.</p>
-        <WaitlistForm />
+        <div className="waitlist-perch">
+          <div className="waitlist-perch-mascots" aria-hidden="true">
+            {specialists.map(({ role }) => <span key={role}><AgentMark role={role} size={38}/></span>)}
+          </div>
+          <WaitlistForm />
+        </div>
         <p className="hero-note">For founders, small teams, and the ideas that won’t leave you alone.</p>
         <a className="hero-explore" href="#how-it-works"><span>From pixels to possibilities.<small>Explore the process</small></span></a>
       </section>
@@ -37,8 +51,17 @@ export default function Home() {
         <div className="workflow-panel">
           <div className="panel-top"><span className="workspace-label">From the first thought to the final detail</span><span className="concept">The GuildOS vision</span></div>
           <div className="workflow-steps">{steps.map((step, index) => <article className="workflow-step" key={step.number} data-motion="rise" data-delay={index * 120}><span className="step-number">{step.number}</span><ProcessArt kind={step.art} /><h3>{step.title}</h3><p>{step.description}</p><span className="step-tag">{step.tag}</span></article>)}</div>
-          <div className="specialist-row"><span className="specialist-label">Your specialists</span><ul>{specialists.map(name => <li key={name}>{name}</li>)}</ul></div>
+          <div className="specialist-row"><span className="specialist-label">Your specialists</span><ul>{specialists.map(({ name, role }) => <li key={role}><span className="specialist-avatar" aria-hidden="true"><AgentMark role={role} size={27}/></span><span>{name}</span></li>)}</ul></div>
         </div>
+      </section>
+
+      <section className="connector-section" aria-labelledby="connectors-heading">
+        <p className="connector-title" id="connectors-heading">Available connectors</p>
+        <ul className="connector-list">
+          <li><AiProviderMark id="chatgpt" size={22}/><span>ChatGPT</span></li>
+          <li><AiProviderMark id="claude" size={22}/><span>Claude</span></li>
+          <li><AiProviderMark id="grok" size={22}/><span>SuperGrok</span></li>
+        </ul>
       </section>
 
       <section className="calm-section" aria-labelledby="calm-heading">
@@ -65,6 +88,6 @@ export default function Home() {
         <div className="closing-copy" data-motion="rise"><p className="eyebrow">A little less busy. A lot more possibility.</p><h2 id="closing-title">Your next chapter.<br /><span>A clearer horizon.</span></h2><p>Bring your next idea. We’ll bring the guild.</p><a href="#join" className="closing-button">Join the waitlist</a></div>
       </section>
     </ScrollMotion></main>
-    <footer><a href="/" className="footer-brand">guildos</a><span>Thoughtfully built. Human-led.</span><span>© {new Date().getFullYear()} GuildOS</span></footer>
+    <footer><a href="/" className="footer-brand" aria-label="GuildOS home"><Mark/><span>guildos</span></a><span>Thoughtfully built. Human-led.</span><span>© {new Date().getFullYear()} GuildOS</span></footer>
   </div>;
 }

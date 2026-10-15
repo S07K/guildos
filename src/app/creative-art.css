@@ -18,10 +18,10 @@
 [data-animation-scene][data-visible='true'] { --art-play: running; }
 [data-animation-scene] svg * { animation-play-state: var(--art-play); }
 .workflow-section { padding-top: 72px; }
-.workflow-panel { background: #fcfcfb; border-color: #e3e6e9; }
-.panel-top { background: #f5f6f5; }
+.workflow-panel { background: #fff; border-color: #e5e9ef; }
+.panel-top { background: #edf2ef; }
 .workflow-step { position: relative; padding: 26px 28px 30px; }
-.step-number { background: transparent; width: auto; height: auto; font-family: ui-monospace, monospace; color: #718294; margin-bottom: 0; }
+.step-number { background: transparent; width: auto; height: auto; font-family: ui-monospace, monospace; color: #567661; margin-bottom: 0; }
 .process-art { height: 157px; margin: 0 -8px 22px; }
 .process-art svg { display: block; width: 100%; height: 100%; }
 .sketch-stroke { stroke-dasharray: 1; stroke-dashoffset: 0; animation: sketch-reveal 8s ease-in-out infinite; }
