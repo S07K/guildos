@@ -1,8 +1,8 @@
 import type { ProviderTokenSet } from '@guildos/provider-auth';
-import { database } from '@/lib/database';
-import { serviceAuthorized, unauthorized } from '@/lib/service-auth';
-import { open, seal } from '@/lib/vault';
-import { openaiProvider } from '@/providers/openai';
+import { database } from '../../../../../../lib/database';
+import { serviceAuthorized, unauthorized } from '../../../../../../lib/service-auth';
+import { open, seal } from '../../../../../../lib/vault';
+import { openaiProvider } from '../../../../../../providers/openai';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
