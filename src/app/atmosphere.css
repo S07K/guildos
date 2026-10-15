@@ -1,12 +1,12 @@
 /* Watercolor landscapes, open space, and the quiet warmth of drawing paper. */
-:root { --paper: #faf8f4; --surface: #f4f3ee; --text: #293e48; --muted: #5d6e75; --accent: #416779; --accent-hover: #315363; --line: #dedfd9; }
+:root { --paper: #f6f7f9; --surface: #edf2ef; --text: #202b38; --muted: #687587; --accent: #386650; --accent-hover: #2e5541; --line: #e5e9ef; }
 body { font-family: var(--font-sans), sans-serif; }
 .brand { font-weight: 600; letter-spacing: -1.2px; }
 .eyebrow { font-size: 12px; letter-spacing: 1.5px; }
 h1, h2 { text-wrap: balance; }
 .hero h1, .hero h1 > span, .section-intro h2, .section-intro h2 span, .calm-copy h2, .calm-copy h2 span, .closing-cta h2, .coast-figure figcaption { font-family: var(--font-editorial), serif; font-weight: 400; }
 .site-shell { max-width: none; padding: 0; }
-.site-header { position: absolute; z-index: 3; top: 24px; left: 50%; transform: translateX(-50%); width: min(1152px, calc(100% - 64px)); height: 66px; padding: 0 24px; border-radius: 40px; background: #ffffffed; box-shadow: 0 5px 25px #293e4809; }
+.site-header { position: absolute; z-index: 3; top: 24px; left: 50%; transform: translateX(-50%); width: min(1152px, calc(100% - 64px)); height: 66px; padding: 0 24px; border-radius: 40px; background: #ffffffed; box-shadow: 0 5px 25px #202b3809; }
 .site-header nav { font-size: 14px; gap: 30px; }
 .nav-cta { border: 0; border-radius: 25px; background: var(--accent); color: white; padding: 12px 20px; }
 .nav-cta:hover { background: var(--accent-hover); }
@@ -21,47 +21,55 @@ h1, h2 { text-wrap: balance; }
 }
 .hero { min-height: 930px; padding: 166px 24px 48px; overflow: hidden; }
 .hero > .hero-landscape { position: absolute; z-index: -1; inset: auto 0 0; height: 100%; object-position: center bottom; mask-image: linear-gradient(to bottom, transparent 0%, #0003 26%, #000b 56%, #000 72%, #000 90%, transparent 100%); }
-.hero-eyebrow { font-size: 12px; margin-bottom: 30px; color: #456275; }
-.hero h1 { font-size: clamp(58px, 6.6vw, 94px); letter-spacing: -2.8px; line-height: 1.02; }
-.hero h1 > span { color: #416779; letter-spacing: -2.8px; }
-.hero-description { color: #455b66; font-size: 18px; max-width: 600px; margin: 27px 0 30px; line-height: 1.65; }
-.waitlist { max-width: 510px; }
-.email-row { padding: 5px; gap: 5px; background: #fffffff0; border: 1px solid #d4dedf; border-radius: 15px; box-shadow: 0 8px 28px #293e4806; }
+.hero-eyebrow { font-size: 12px; margin-bottom: 30px; color: #386650; }
+.hero h1 { font-family: var(--font-sans), sans-serif; font-size: clamp(58px, 6.6vw, 94px); font-weight: 600; letter-spacing: -2.8px; line-height: 1.02; }
+.hero h1 > span { color: #386650; font-family: var(--font-sans), sans-serif; font-style: normal; font-weight: 400; letter-spacing: -2.8px; }
+.hero-description { color: #536474; font-size: 18px; max-width: 600px; margin: 27px 0 30px; line-height: 1.65; }
+.waitlist-perch { position: relative; width: min(100%, 510px); margin-top: 22px; }
+.waitlist-perch .waitlist { max-width: none; }
+.waitlist-perch-mascots { position: absolute; z-index: 3; top: -32px; left: auto; right: 16px; width: 175px; display: flex; align-items: end; justify-content: flex-end; pointer-events: none; }
+.waitlist-perch-mascots > span { display: inline-flex; width: 38px; height: 38px; flex: none; align-items: center; justify-content: center; overflow: visible; line-height: 0; }
+.waitlist-perch-mascots > span + span { margin-left: -6px; }
+.email-row { padding: 5px; gap: 5px; background: #fffffff0; border: 1px solid #dce5df; border-radius: 15px; box-shadow: 0 8px 28px #202b3806; }
 input[type=email] { border-radius: 10px; border-color: transparent; padding: 15px 14px; background: transparent; font-size: 15px; }
 button, .closing-button { border-radius: 10px; font-size: 14px; padding: 17px 20px; }
-.form-note { font-size: 12px; color: #455b66; }
-.hero-note { color: #455b66; font-size: 12px; max-width: 390px; line-height: 1.6; margin-top: 22px; }
-.hero-explore { align-self: center; margin-top: auto; padding-top: 125px; text-align: center; font-size: 14px; color: #324e5e; }
+.form-note { font-size: 12px; color: #687587; }
+.hero-note { color: #687587; font-size: 12px; max-width: 390px; line-height: 1.6; margin-top: 22px; }
+.connector-section { display: flex; align-items: center; justify-content: center; gap: 24px; width: min(1152px, calc(100% - 80px)); margin: 34px auto 0; padding: 22px 0 0; border-top: 1px solid var(--line); }
+.connector-title { margin: 0; color: #687587; font: 600 10px/1.3 var(--font-sans), sans-serif; letter-spacing: 1.5px; text-transform: uppercase; }
+.connector-list { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px; list-style: none; margin: 0; padding: 0; }
+.connector-list li { display: inline-flex; align-items: center; gap: 9px; min-height: 44px; padding: 7px 15px; border: 1px solid #e2e6e2; border-radius: 999px; background: #fff; color: #202b38; font-size: 14px; font-weight: 600; white-space: nowrap; }
+.connector-list li > svg { width: 22px; height: 22px; flex: none; }
+.hero-explore { align-self: center; margin-top: auto; padding-top: 125px; text-align: center; font-size: 14px; color: var(--text); }
 .hero-explore small { margin-top: 4px; }
 .workflow-section, .principles, footer { width: min(1152px, calc(100% - 80px)); margin-inline: auto; }
 .workflow-section { border-top: 0; padding-top: 90px; }
 .section-intro { margin-bottom: 44px; }
-.section-intro h2 { font-size: clamp(40px, 4.2vw, 58px); line-height: 1.08; letter-spacing: -1.4px; }
-.section-intro h2 span { font-style: italic; color: var(--accent); }
+.section-intro h2 { font-family: var(--font-sans), sans-serif; font-size: clamp(40px, 4.2vw, 58px); font-weight: 600; line-height: 1.08; letter-spacing: -1.4px; }
+.section-intro h2 span { font-family: var(--font-sans), sans-serif; font-style: normal; font-weight: 400; color: var(--accent); }
 .section-intro > p { font-size: 15px; max-width: 340px; }
-.workflow-panel { background: transparent; border-radius: 0; border: 0; }
-.panel-top { background: transparent; padding: 17px 0; border-top: 1px solid var(--line); }
-.workflow-step { padding: 30px 30px 36px; }
-.workflow-step:first-child { padding-left: 0; }
-.workflow-step:last-child { padding-right: 0; }
+.workflow-panel { background: #fff; border-radius: 12px; border: 1px solid var(--line); overflow: hidden; }
+.panel-top { background: #edf2ef; padding: 17px 24px; border-top: 0; }
+.workflow-step { display: flex; flex-direction: column; align-items: flex-start; padding: 30px; }
 .workflow-step h3 { font-size: 20px; letter-spacing: -.5px; }
-.step-number { font-family: var(--font-editorial), serif; font-size: 26px; font-style: italic; color: #718294; }
+.step-number { font-family: var(--font-sans), sans-serif; font-size: 15px; font-style: normal; font-weight: 600; color: #567661; }
 .process-art { margin-top: 8px; height: 170px; }
-.specialist-row { padding: 22px 0; gap: 32px; }
+.specialist-row { padding: 22px 24px; gap: 32px; }
 .specialist-row ul { gap: 8px; }
-.specialist-row li { padding: 7px 12px; border: 1px solid #dde3de; border-radius: 24px; background: #f1f3ee; }
+.specialist-row li { display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px 5px 6px; border: 1px solid #dce5df; border-radius: 24px; background: #edf2ef; }
+.specialist-avatar { display: inline-flex; width: 28px; height: 28px; flex: none; align-items: center; justify-content: center; line-height: 0; }
 .workflow-step p, .principles p { font-size: 14px; }
 .workspace-label, .specialist-row li, .specialist-label, .step-tag { font-size: 12px; }
 .calm-section { display: grid; grid-template-columns: 1.15fr 1fr; align-items: center; gap: clamp(35px, 6vw, 100px); width: min(1280px, calc(100% - 80px)); margin: 110px auto 0; border-radius: 0; background: transparent; overflow: visible; }
 .coast-figure { margin: 0; min-width: 0; }
 .coast-figure .landscape-image { height: 540px; border-radius: 48% 48% 8px 8px; object-position: 45% center; }
-.coast-figure figcaption { font-style: italic; font-size: 18px; color: var(--muted); text-align: center; margin-top: 20px; }
+.coast-figure figcaption { font-family: var(--font-sans), sans-serif; font-style: normal; font-size: 18px; color: var(--muted); text-align: center; margin-top: 20px; }
 .calm-copy { padding: 0 24px 25px 0; max-width: 450px; }
 .calm-copy .eyebrow { margin-bottom: 23px; font-size: 12px; }
-.calm-copy h2 { font-size: clamp(44px, 4.8vw, 66px); line-height: 1.02; letter-spacing: -1.8px; }
-.calm-copy h2 span { font-style: italic; color: var(--accent); }
+.calm-copy h2 { font-family: var(--font-sans), sans-serif; font-size: clamp(44px, 4.8vw, 66px); font-weight: 600; line-height: 1.02; letter-spacing: -1.8px; }
+.calm-copy h2 span { font-family: var(--font-sans), sans-serif; font-style: normal; font-weight: 400; color: var(--accent); }
 .calm-copy > p:not(.eyebrow) { font-size: 16px; line-height: 1.9; color: var(--muted); margin: 24px 0 0; }
-.quiet-link { display: inline-flex; align-items: center; min-height: 44px; margin-top: 23px; color: var(--accent); font-size: 14px; text-decoration: underline; text-underline-offset: 6px; text-decoration-color: #a1b5ba; }
+.quiet-link { display: inline-flex; align-items: center; min-height: 44px; margin-top: 23px; color: var(--accent); font-size: 14px; text-decoration: underline; text-underline-offset: 6px; text-decoration-color: #a8c3b1; }
 .quiet-link:hover { text-decoration-color: currentColor; }
 .principles { padding-block: 90px 95px; gap: 65px; }
 .principles article { border-top: 1px solid var(--line); padding-top: 22px; }
@@ -71,9 +79,9 @@ button, .closing-button { border-radius: 10px; font-size: 14px; padding: 17px 20
 .closing-scenery { position: absolute; z-index: -1; inset: 0; overflow: hidden; pointer-events: none; mask-image: linear-gradient(to bottom, transparent, #0008 23%, #000 47%, #000 75%, #0005 92%, #0003); }
 .closing-landscape { position: absolute; inset: 0; object-position: center 58%; }
 .closing-copy { position: relative; }
-.closing-cta h2 { font-size: clamp(48px, 5.4vw, 76px); color: var(--text); line-height: 1.02; font-style: normal; letter-spacing: -1.8px; }
-.closing-cta h2 span { color: var(--accent); font-style: italic; }
-.closing-copy > p:not(.eyebrow) { font-size: 16px; color: #455b66; margin: 23px 0 0; }
+.closing-cta h2 { font-family: var(--font-sans), sans-serif; font-size: clamp(48px, 5.4vw, 76px); font-weight: 600; color: var(--text); line-height: 1.02; font-style: normal; letter-spacing: -1.8px; }
+.closing-cta h2 span { color: var(--accent); font-style: normal; font-weight: 400; }
+.closing-copy > p:not(.eyebrow) { font-size: 16px; color: #536474; margin: 23px 0 0; }
 .closing-button { margin-top: 25px; border-radius: 30px; padding-inline: 28px; }
 footer { position: relative; z-index: 1; min-height: 84px; margin-top: -84px; padding-block: 24px; border-top: 0; font-size: 12px; background: transparent; }
 @media (min-width: 1700px) { .hero { min-height: 1050px; } }
@@ -95,18 +103,26 @@ footer { position: relative; z-index: 1; min-height: 84px; margin-top: -84px; pa
   .hero h1 > span { letter-spacing: -1.7px; }
   .hero-eyebrow { font-size: 10px; letter-spacing: 1px; margin-bottom: 25px; }
   .hero-description { font-size: 16px; margin: 24px 0 26px; }
+  .waitlist-perch { margin-top: 25px; }
+  .waitlist-perch-mascots { top: 24px; right: 12px; width: 165px; }
+  .waitlist-perch-mascots > span { width: 34px; height: 34px; }
   .email-row { padding: 6px; gap: 6px; }
   input[type=email] { font-size: 16px; padding: 15px 12px; }
   .hero-note { font-size: 11px; }
+  .connector-section { flex-direction: column; gap: 12px; width: calc(100% - 44px); margin-top: 26px; padding-top: 20px; }
+  .connector-title { font-size: 9px; }
+  .connector-list { gap: 7px; }
+  .connector-list li { min-height: 40px; gap: 7px; padding: 6px 11px; font-size: 12px; }
+  .connector-list li > svg { width: 18px; height: 18px; }
   .form-note { font-size: 11px; }
   .hero-explore { padding-top: 100px; font-size: 14px; }
   .workflow-section, .principles, footer { width: calc(100% - 44px); }
   .workflow-section { padding-top: 45px; }
   .section-intro { gap: 20px; }
   .section-intro h2 { font-size: 40px; }
-  .workflow-step, .workflow-step:first-child, .workflow-step:last-child { padding: 28px 6px; }
+  .workflow-step { padding: 28px 24px; }
   .process-art { margin-top: 12px; }
-  .specialist-row { padding: 22px 0; gap: 15px; }
+  .specialist-row { padding: 22px 24px; gap: 15px; }
   .specialist-row ul { gap: 8px; }
   .panel-top { align-items: start; gap: 20px; }
   .panel-top .workspace-label { max-width: 170px; }
