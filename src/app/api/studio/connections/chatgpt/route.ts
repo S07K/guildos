@@ -9,7 +9,7 @@ async function context(request: Request) {
  const expected = process.env.STUDIO_APP_URL || new URL(request.url).origin;
  const crossSite = request.headers.get('sec-fetch-site') === 'cross-site';
  if (crossSite || (origin && origin !== new URL(expected).origin) || (request.method !== 'GET' && !origin)) return { response: json({ error: 'Submit this request from your GuildOS studio.' }, 403) };
- if (!authConfig() || !process.env.CODEX_BRIDGE_URL || !process.env.CODEX_BRIDGE_TOKEN) return { response: json({ error: 'ChatGPT device connection is not configured for this deployment.' }, 503) };
+ if (!authConfig()) return { response: json({ status: 'unconfigured', error: 'Studio access is not configured.' }, 503) };
  const client = await sessionClient();
  const { data: { user } } = await client.auth.getUser();
  if (!user) return { response: json({ error: 'Your session expired. Sign in again.' }, 401) };
@@ -18,29 +18,36 @@ async function context(request: Request) {
  return { workspaceId: workspace.id };
 }
 
-async function bridge(request: Request, workspaceId: string, method: string, action?: string) {
- const base = process.env.CODEX_BRIDGE_URL!.replace(/\/$/, '');
+function serviceConfig() {
+ const base = process.env.AI_SIGNIN_SERVICE_URL?.replace(/\/$/, '');
+ const token = process.env.AI_SIGNIN_SERVICE_TOKEN;
+ return base && token ? { base, token } : null;
+}
+
+async function serviceRequest(path: string, init: RequestInit = {}) {
+ const config = serviceConfig();
+ if (!config) return json({ status: 'unconfigured', error: 'The GuildOS AI sign-in service is not configured.' }, 503);
  try {
-  const response = await fetch(`${base}/v1/device/session?workspace_id=${encodeURIComponent(workspaceId)}`, {
-   method, headers: { Authorization: `Bearer ${process.env.CODEX_BRIDGE_TOKEN}`, ...(action ? { 'Content-Type': 'application/json' } : {}) },
-   ...(action ? { body: JSON.stringify({ action }) } : {}), cache: 'no-store', signal: AbortSignal.timeout(12000),
-  });
+  const response = await fetch(`${config.base}${path}`, { ...init, headers: { Authorization: `Bearer ${config.token}`, ...(init.body ? { 'Content-Type': 'application/json' } : {}), ...init.headers }, cache: 'no-store', signal: AbortSignal.timeout(12000) });
   const data = await response.json().catch(() => ({}));
   return json(data, response.status);
- } catch { return json({ error: 'ChatGPT connection service is unavailable. Please try again shortly.' }, 503); }
+ } catch { return json({ error: 'The GuildOS AI sign-in service is unavailable. Please try again shortly.' }, 503); }
 }
 
 export async function GET(request: Request) {
  const ctx = await context(request); if ('response' in ctx) return ctx.response;
- return bridge(request, ctx.workspaceId, 'GET');
+ return serviceRequest(`/api/v1/connections/openai?workspaceId=${encodeURIComponent(ctx.workspaceId)}`);
 }
+
 export async function POST(request: Request) {
  const ctx = await context(request); if ('response' in ctx) return ctx.response;
  let body; try { body = await request.json(); } catch { return json({ error: 'Invalid request.' }, 400); }
  if (body?.action !== 'start') return json({ error: 'Invalid action.' }, 400);
- return bridge(request, ctx.workspaceId, 'POST', 'start');
+ const returnTo = new URL('/studio/settings', process.env.STUDIO_APP_URL || new URL(request.url).origin).toString();
+ return serviceRequest('/api/v1/oauth/openai/start', { method: 'POST', body: JSON.stringify({ workspaceId: ctx.workspaceId, returnTo }) });
 }
+
 export async function DELETE(request: Request) {
  const ctx = await context(request); if ('response' in ctx) return ctx.response;
- return bridge(request, ctx.workspaceId, 'DELETE');
+ return serviceRequest(`/api/v1/connections/openai?workspaceId=${encodeURIComponent(ctx.workspaceId)}`, { method: 'DELETE' });
 }

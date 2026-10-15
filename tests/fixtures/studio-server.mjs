@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 const user = { id: '00000000-0000-4000-8000-000000000001', email: 'studio-test@example.com', aud: 'authenticated', role: 'authenticated', app_metadata: {}, user_metadata: {}, created_at: new Date().toISOString() };
 const token = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url') + '.' + Buffer.from(JSON.stringify({ sub: user.id, exp: Math.floor(Date.now()/1000)+3600, role: 'authenticated' })).toString('base64url') + '.fixture-signature';
-const tables = { studio_workspaces: [], studio_projects: [], studio_keys: [], studio_versions: [], studio_chatgpt_sessions: [], studio_agent_notes: [] };
+const tables = { studio_workspaces: [], studio_projects: [], studio_keys: [], studio_versions: [], studio_agent_notes: [] };
 const server = createServer(async (req, res) => {
  const url = new URL(req.url, 'http://localhost');
  let raw = ''; for await (const chunk of req) raw += chunk;
@@ -16,16 +16,6 @@ const server = createServer(async (req, res) => {
  const authenticated = req.headers.authorization === 'Bearer ' + token;
  const admin = req.headers.apikey === 'sb_secret_test-studio-only';
  if (url.pathname === '/auth/v1/user') return authenticated ? send(user) : send({ message: 'Unauthorized' }, 401);
- if (url.pathname === '/testing/chat-session') {
-  const project=tables.studio_projects.find(row=>row.id===body.projectId);
-  if(!project)return send({message:'Project not found'},404);
-  tables.studio_chatgpt_sessions.push({workspace_id:project.workspace_id,ciphertext:'test-only',plan_type:'plus'});
-  return send({ok:true});
- }
- if (url.pathname === '/v1/generate') {
-  if(req.headers.authorization!=='Bearer test-bridge-token')return send({error:'Unauthorized'},401);
-  return send({document:{brand:'Connected studio',eyebrow:'One connected plan',headline:'Created with your ChatGPT connection.',description:'A landing page created through the connected account.',cta:'Get started',style:'minimal',palette:'moss',features:[{title:'Create',description:'Start from a brief.'},{title:'Refine',description:'Shape the next version.'},{title:'Save',description:'Keep your work.'}],closingTitle:'Start your project.',closingDescription:'Bring your ideas.',designNotes:'A minimal layout with a moss palette.'},model:'chatgpt/test-fixture',input_tokens:120,output_tokens:80});
- }
  if(url.pathname==='/rest/v1/rpc/reserve_studio_generation')return admin?send(true):send({},403);
  if(url.pathname==='/rest/v1/rpc/release_studio_generation')return admin?send(null):send({},403);
  if (url.pathname === '/testing/version' && req.method === 'POST') {

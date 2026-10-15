@@ -4,6 +4,7 @@ import { openKey } from '@/lib/studio/vault.mjs';
 import { generateChatGPT } from '@/lib/studio/chatgpt';
 import { runGuild, type AgentNote } from '@/lib/studio/guild';
 import { withProviderFallback, type ModelProvider } from '@/lib/studio/provider-fallback.ts';
+import { hasChatGPTPlan } from '@/lib/studio/chatgpt-oauth';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
@@ -38,11 +39,13 @@ export async function POST(request: Request) {
  const admin = adminClient();
  const { data: discussion, error: discussionError } = await client.from('studio_agent_notes').select('author_role,mentioned_role,anchor,body').eq('project_id', project.id).order('created_at', { ascending: false }).limit(30);
  if (discussionError) return json({ error: 'The guild discussion is unavailable. Apply the latest Supabase migration.' }, 503);
- const { data: credential } = await admin.from('studio_keys').select('ciphertext').eq('workspace_id', project.workspace_id).maybeSingle();
- const { data: chatSession } = await admin.from('studio_chatgpt_sessions').select('workspace_id').eq('workspace_id', project.workspace_id).maybeSingle();
- const provider: ModelProvider = body.provider || (credential ? 'api' : chatSession ? 'chatgpt' : 'api');
+ const [{ data: credential }, planConnected] = await Promise.all([
+  admin.from('studio_keys').select('ciphertext').eq('workspace_id', project.workspace_id).maybeSingle(),
+  hasChatGPTPlan(project.workspace_id),
+ ]);
+ const provider: ModelProvider = body.provider || (credential ? 'api' : planConnected ? 'chatgpt' : 'api');
  if (body.provider && !['api','chatgpt'].includes(body.provider)) return json({ error: 'Invalid model connection.' },400);
- const available = { api: !!credential, chatgpt: !!chatSession && !!process.env.CODEX_BRIDGE_URL && !!process.env.CODEX_BRIDGE_TOKEN };
+ const available = { api: !!credential, chatgpt: planConnected };
  if (provider === 'chatgpt' && !available.chatgpt) return json({ error: 'Reconnect ChatGPT in Connections; its generation service is unavailable.' },400);
  if (provider === 'api' && !available.api) return json({ error: 'Connect ChatGPT or an OpenAI API key in Connections first.' },400);
  const token = randomUUID();

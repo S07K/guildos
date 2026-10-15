@@ -1,5 +1,6 @@
 import type { NextConfig } from 'next';
 const config: NextConfig = {
+  agentRules: false,
   serverExternalPackages: ['node:sqlite'],
   // Artwork is served as pre-sized static assets; keep the unused optimizer closed.
   images: { unoptimized: true },

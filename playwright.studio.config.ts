@@ -7,7 +7,6 @@ export default defineConfig({
   { command: 'node tests/fixtures/studio-server.mjs', url: 'http://127.0.0.1:3199/health', reuseExistingServer: false },
   { command: 'npm run start -- --hostname 127.0.0.1 --port 3105', url: 'http://127.0.0.1:3105/signin', reuseExistingServer: false, env: {
    SUPABASE_URL: 'http://127.0.0.1:3199', SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_test-studio-only', SUPABASE_SECRET_KEY: 'sb_secret_test-studio-only', STUDIO_VAULT_KEY: 'a'.repeat(64), STUDIO_APP_URL: 'http://127.0.0.1:3105', NEXT_PUBLIC_APP_URL: 'http://127.0.0.1:3105',
-   CODEX_BRIDGE_URL: 'http://127.0.0.1:3199', CODEX_BRIDGE_TOKEN: 'test-bridge-token',
   } },
  ],
 });
