@@ -4,6 +4,7 @@ import { openKey } from '@/lib/studio/vault.mjs';
 import { replyAsAgent, replyAsChatGPT } from '@/lib/studio/agent-chat';
 import { agentRoles } from '@/lib/studio/agent-roles';
 import { withProviderFallback } from '@/lib/studio/provider-fallback.ts';
+import { hasChatGPTPlan } from '@/lib/studio/chatgpt-oauth';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
@@ -44,15 +45,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ rol
  catch { return json({ error: 'Invalid message.' }, 400); }
  if (typeof body?.text !== 'string' || !body.text.trim() || body.text.length > 4000 || (body.sharedThread !== undefined && typeof body.sharedThread !== 'boolean')) return json({ error: 'Write a message under 4,000 characters.' }, 400);
  const admin = adminClient();
- const [{ data: prior, error: priorError }, { data: notes, error: notesError }, { data: latestVersion, error: versionError }, { data: credential }, { data: chatSession }] = await Promise.all([
+ const [{ data: prior, error: priorError }, { data: notes, error: notesError }, { data: latestVersion, error: versionError }, { data: credential }, planConnected] = await Promise.all([
   ctx.client.from('studio_agent_messages').select('author_kind,body').eq('project_id', ctx.project.id).eq('workspace_id', ctx.project.workspace_id).eq('agent_role', ctx.role).order('created_at', { ascending: false }).limit(12),
   ctx.client.from('studio_agent_notes').select('author_role,mentioned_role,anchor,body').eq('project_id', ctx.project.id).order('created_at', { ascending: false }).limit(20),
   ctx.client.from('studio_versions').select('id,document').eq('project_id', ctx.project.id).eq('workspace_id', ctx.project.workspace_id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
   admin.from('studio_keys').select('ciphertext').eq('workspace_id', ctx.project.workspace_id).maybeSingle(),
-  admin.from('studio_chatgpt_sessions').select('workspace_id').eq('workspace_id', ctx.project.workspace_id).maybeSingle(),
+  hasChatGPTPlan(ctx.project.workspace_id),
  ]);
  if (priorError || notesError || versionError) return json({ error: 'Project context could not be loaded. Please try again.' }, 503);
- const available = { api: !!credential, chatgpt: !!chatSession && !!process.env.CODEX_BRIDGE_URL && !!process.env.CODEX_BRIDGE_TOKEN };
+ const available = { api: !!credential, chatgpt: planConnected };
  if (!available.api && !available.chatgpt) return json({ error: 'Connect ChatGPT or an OpenAI API key in Connections first.' }, 400);
  const token = randomUUID();
  const { data: allowed, error: lockError } = await admin.rpc('reserve_studio_generation', { workspace: ctx.project.workspace_id, token });

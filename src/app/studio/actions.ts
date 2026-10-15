@@ -26,7 +26,7 @@ export async function verifyCode(email: string, token: string) {
   const { error } = await client.auth.verifyOtp({ email: email.trim().toLowerCase(), token, type: 'email' });
   if (error) return { error: 'That code is invalid or expired. Request a new code and try again.' };
  } catch { return { error: 'Sign-in is temporarily unavailable.' }; }
- redirect('/studio');
+ return { verified: true };
 }
 export async function signOut() {
  const client = await sessionClient();

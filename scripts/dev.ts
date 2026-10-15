@@ -34,40 +34,45 @@ process.on('SIGTERM', () => stop());
 
 async function start() {
  const env = { ...process.env };
- const url = new URL(env.CODEX_BRIDGE_URL || 'http://127.0.0.1:8787');
- const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
- const ready = ['SUPABASE_URL', 'SUPABASE_SECRET_KEY', 'STUDIO_VAULT_KEY'].every(key => !!env[key]);
- if (local && ready) {
-  if (!env.CODEX_BRIDGE_TOKEN) {
-   const directory = resolve('.data');
-   const tokenFile = resolve(directory, 'codex-bridge-token');
-   await mkdir(directory, { recursive: true, mode: 0o700 });
-   try { env.CODEX_BRIDGE_TOKEN = (await readFile(tokenFile, 'utf8')).trim(); }
+ const serviceUrl = new URL(env.AI_SIGNIN_SERVICE_URL || 'http://127.0.0.1:8787');
+ const localService = ['localhost', '127.0.0.1', '[::1]'].includes(serviceUrl.hostname);
+ const serviceReady = !!env.SUPABASE_URL && !!env.SUPABASE_SECRET_KEY;
+ if (localService && serviceReady) {
+  const directory = resolve('.data');
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  async function secret(name: string) {
+   const path = resolve(directory, name);
+   try { return (await readFile(path, 'utf8')).trim(); }
    catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-    const token = randomBytes(32).toString('hex');
-    try { await writeFile(tokenFile, token, { flag: 'wx', mode: 0o600 }); env.CODEX_BRIDGE_TOKEN = token; }
-    catch (race) { if ((race as NodeJS.ErrnoException).code !== 'EEXIST') throw race; env.CODEX_BRIDGE_TOKEN = (await readFile(tokenFile, 'utf8')).trim(); }
+    const value = randomBytes(32).toString('hex');
+    try { await writeFile(path, value, { flag: 'wx', mode: 0o600 }); return value; }
+    catch (race) { if ((race as NodeJS.ErrnoException).code !== 'EEXIST') throw race; return (await readFile(path, 'utf8')).trim(); }
    }
   }
-  if (!env.CODEX_BRIDGE_TOKEN) throw new Error('The local bridge token file is empty.');
-  env.CODEX_BRIDGE_URL = url.origin;
-  launch('services/codex-bridge/src/server.ts', [], { ...env, PORT: url.port || '8787', HOST: url.hostname.replace(/^\[|\]$/g, '') });
-  let connected = false;
-  for (let attempt = 0; attempt < 40 && !stopping; attempt++) {
+  env.AI_SIGNIN_SERVICE_TOKEN = env.AI_SIGNIN_SERVICE_TOKEN || await secret('ai-signin-service-token');
+  env.AI_SIGNIN_VAULT_KEY = env.AI_SIGNIN_VAULT_KEY || await secret('ai-signin-vault-key');
+  env.AI_SIGNIN_PUBLIC_URL = serviceUrl.origin;
+  env.AI_SIGNIN_SERVICE_URL = serviceUrl.origin;
+  env.GUILDOS_APP_URL = env.GUILDOS_APP_URL || env.STUDIO_APP_URL || 'http://localhost:3000';
+  const host = serviceUrl.hostname.replace(/^\[|\]$/g, '');
+  launch('node_modules/next/dist/bin/next', ['dev', 'apps/ai-signin', '--webpack', '--hostname', host, '--port', serviceUrl.port || '8787'], env);
+  let ready = false;
+  for (let attempt = 0; attempt < 80 && !stopping; attempt++) {
    try {
-    const response = await fetch(`${url.origin}/health`, { headers: { Authorization: `Bearer ${env.CODEX_BRIDGE_TOKEN}` }, signal: AbortSignal.timeout(500) });
-    if (response.ok) { connected = true; break; }
-   } catch { /* Wait for the bridge to bind its port. */ }
-   await new Promise(done => setTimeout(done, 100));
+    const response = await fetch(`${serviceUrl.origin}/api/health`, { signal: AbortSignal.timeout(500) });
+    if (response.ok) { ready = true; break; }
+   } catch { /* Wait for the service to bind its port. */ }
+   await new Promise(done => setTimeout(done, 250));
   }
   if (stopping) return;
-  if (!connected) throw new Error('The local ChatGPT bridge did not start. Check whether its port is already in use.');
-  console.log(`ChatGPT bridge ready at ${url.origin}`);
- } else if (local) {
-  console.log('ChatGPT bridge disabled: configure SUPABASE_URL, SUPABASE_SECRET_KEY, and STUDIO_VAULT_KEY to enable it.');
+  if (!ready) throw new Error('The local AI sign-in service did not start. Check whether its port is already in use.');
+  console.log(`GuildOS AI sign-in service ready at ${serviceUrl.origin}`);
+  if (!env.OPENAI_CLIENT_ID) console.log('ChatGPT sign-in is waiting for OPENAI_CLIENT_ID and OpenAI integration approval.');
+ } else if (localService) {
+  console.log('AI sign-in service disabled: configure SUPABASE_URL and SUPABASE_SECRET_KEY to enable it.');
  } else {
-  console.log('Using the configured remote ChatGPT bridge.');
+  console.log(`Using AI sign-in service at ${serviceUrl.origin}.`);
  }
  if (!stopping) launch('node_modules/next/dist/bin/next', ['dev', '--webpack', ...process.argv.slice(2)], env);
 }
