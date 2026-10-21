@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { PGlite } from '@electric-sql/pglite';
 import { runGuild } from '../src/lib/studio/guild.ts';
-import { ProviderCapacityError, withProviderFallback } from '../src/lib/studio/provider-fallback.ts';
+import { ProviderCapacityError, withProviderFallback, preferredProvider } from '../src/lib/studio/provider-fallback.ts';
 
 const design = { brand: 'Cove', eyebrow: 'Space to think', headline: 'Good work starts here.', description: 'A studio for small creative teams.', cta: 'Book a visit', style: 'editorial', palette: 'ocean', features: [{ title: 'Space', description: 'Room for your work.' }, { title: 'Community', description: 'Meet other makers.' }, { title: 'Focus', description: 'Quiet when you need it.' }], closingTitle: 'Find your space.', closingDescription: 'Come see the studio.', designNotes: 'A quiet editorial direction.' };
 
@@ -29,26 +29,38 @@ test('provider fallback leaves non-capacity failures alone', async () => {
  assert.deepEqual(calls, ['api']);
 });
 
-test('guild runs distinct specialist stages, passes prior review into design, and totals usage', async () => {
- const calls = [];
- const request = async (_, options) => {
-  const payload = JSON.parse(options.body);
-  calls.push(payload);
-  const input = JSON.parse(payload.input);
-  if (payload.instructions.includes('UI Designer in')) {
-   assert.equal(input.reviews.length, 3);
-   assert.equal(input.discussion[0].body, 'Make the CTA clearer.');
+const component=(id,type,parentId=null,properties={})=>({id,parentId,type,layoutMode:'VERTICAL',primaryAxisSizingMode:'HUG',counterAxisSizingMode:'FILL',padding:16,itemSpacing:8,properties});
+function guildResponse(payload){
+ if(payload.text.format.name==='pipeline_audit')return {summary:'Complete screen passes QA.',issues:[]};
+ const instruction=payload.instructions;
+ const nodes=instruction.includes('UX Architecture Agent')?[component('screen','container'),component('content','container','screen')]
+  :instruction.includes('UI Design Agent')?[component('headline','text','content',{text:'Welcome to Cove'}),component('cta','button','content',{text:'Visit',backgroundColor:'accent',color:'on-accent'})]
+  :instruction.includes('Copywriting Agent')?[component('cta','button','content',{text:'Book a visit',backgroundColor:'accent',color:'on-accent'})]:[];
+ return {mode:'edit',summary:'Updated the requested component.',upsert_nodes:nodes,delete_ids:[],handoff:null,stage_complete:true};
+}
+test('guild follows the five-stage pipeline and returns only the QA-approved turn',async()=>{
+ const calls=[];
+ const result=await runGuild({key:'test',brief:'A thoughtful workspace page',discussion:[{author_role:'human',mentioned_role:'copywriter',anchor:'hero',body:'Make the CTA clearer.'}]},async(_url,options)=>{
+  const payload=JSON.parse(options.body);calls.push(payload);
+  if(payload.instructions.includes('UI Design Agent')){
+   const context=JSON.parse(payload.input);assert.equal(context.current_canvas.nodes.length,2);assert.equal(context.recent_discussion[0].body,'Make the CTA clearer.');
   }
-  const value = payload.text.format.schema.properties.brand ? design : { anchor: 'hero', body: `Review from ${payload.instructions.slice(0, 28)}`, mentioned_role: 'ui_designer' };
-  return Response.json({ status: 'completed', model: 'gpt-4.1-mini', output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify(value) }] }], usage: { input_tokens: 10, output_tokens: 5 } });
- };
- const result = await runGuild({ key: 'test', brief: 'Make a thoughtful workspace landing page.', discussion: [{ author_role: 'human', mentioned_role: 'copywriter', anchor: 'hero', body: 'Make the CTA clearer.' }] }, request);
- assert.equal(calls.length, 5);
- assert.equal(result.notes.length, 5);
- assert.deepEqual(result.notes.map(note => note.author_role), ['creative_director', 'ux_architect', 'copywriter', 'ui_designer', 'qa_critic']);
- assert.equal(result.input_tokens, 50);
- assert.equal(result.output_tokens, 25);
- assert.deepEqual(result.document, design);
+  return Response.json({status:'completed',usage:{input_tokens:10,output_tokens:5},output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(guildResponse(payload))}]}]});
+ });
+ assert.equal(calls.length,5);assert.equal(result.notes.length,5);
+ assert.deepEqual(result.notes.map(note=>note.author_role),['ux_architect','creative_director','ui_designer','copywriter','qa_critic']);
+ assert.equal(result.input_tokens,50);assert.equal(result.output_tokens,25);
+ assert.equal(result.document.nodes.find(node=>node.id==='cta').text,'Book a visit');assert.ok(result.document.nodes.every(node=>node.flow));
+ for(const call of calls.slice(0,4))assert.deepEqual(call.text.format.schema,calls[1].text.format.schema);
+});
+
+test('Groq guild requests omit the unsupported store parameter',async()=>{
+ let calls=0;
+ await runGuild({key:'test',brief:'Cafe app',model:'openai/gpt-oss-120b',provider:'groq'},async(url,options)=>{
+  const payload=JSON.parse(options.body);calls++;
+  assert.equal(url,'https://api.groq.com/openai/v1/responses');assert.equal(Object.hasOwn(payload,'store'),false);
+  return Response.json({status:'completed',usage:{input_tokens:10,output_tokens:5},output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(guildResponse(payload))}]}]});
+ });assert.equal(calls,5);
 });
 
 test('agent comments are tenant scoped and cannot point at another project version', async () => {
@@ -77,4 +89,26 @@ test('agent comments are tenant scoped and cannot point at another project versi
   await db.exec('SET ROLE authenticated');
   assert.equal((await db.query('SELECT * FROM studio_agent_notes WHERE id=$1', [note])).rows.length, 1);
  } finally { await db.close(); }
+});
+
+
+test('connected ChatGPT is preferred and falls back through Groq, OpenRouter, then OpenAI API',async()=>{
+ const available={chatgpt:true,groq:true,openrouter:true,api:true},calls=[];
+ assert.equal(preferredProvider(available),'chatgpt');
+ assert.equal(preferredProvider({...available,chatgpt:false}),'groq');
+ const result=await withProviderFallback({preferred:preferredProvider(available),available,run:async provider=>{
+  calls.push(provider);if(provider!=='api')throw new ProviderCapacityError(provider,'Capacity exhausted.');return 'done';
+ }});
+ assert.deepEqual(calls,['chatgpt','groq','openrouter','api']);assert.equal(result.value,'done');
+});
+
+test('pipeline rejects ad hoc handoffs instead of executing another specialist out of order',async()=>{
+ const called=[];
+ await assert.rejects(runGuild({key:'test',brief:'A thoughtful workspace page'},async(_url,options)=>{
+  const payload=JSON.parse(options.body);called.push(payload.instructions);
+  let response=guildResponse(payload);
+  if(payload.instructions.includes('UI Design Agent'))response={...response,upsert_nodes:[],handoff:{agent_role:'copywriter',instruction:'Skip ahead to copy'}};
+  return Response.json({status:'completed',usage:{input_tokens:10,output_tokens:5},output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(response)}]}]});
+ }),/cannot hand off/);
+ assert.equal(called.some(instruction=>instruction.includes('Copywriting Agent')),false);
 });

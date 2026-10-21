@@ -1,3 +1,4 @@
+import { taskDisplay } from '@/lib/studio/task-display';
 import { adminClient, authConfig, sessionClient } from '@/lib/studio/supabase';
 import { agentRoles } from '@/lib/studio/agent-roles';
 
@@ -36,20 +37,29 @@ export async function POST(request: Request) {
  const client = await sessionClient();
  const { data: { user } } = await client.auth.getUser();
  if (!user) return json({ error: 'Your session expired. Sign in again.' }, 401);
- let body: { projectId?: unknown; versionId?: unknown; anchor?: unknown; mentionedRole?: unknown; text?: unknown };
+ let body: { projectId?: unknown; versionId?: unknown; anchor?: unknown; mentionedRole?: unknown; text?: unknown; requestId?: unknown };
  try {
   const raw = await request.text();
   if (raw.length > 5000) return json({ error: 'Comment is too long.' }, 413);
   body = JSON.parse(raw);
  } catch { return json({ error: 'Invalid comment.' }, 400); }
- if (!body || typeof body.projectId !== 'string' || !uuid.test(body.projectId) || typeof body.text !== 'string' || !body.text.trim() || body.text.length > 2000 || !anchors.includes(String(body.anchor)) || (body.mentionedRole !== null && body.mentionedRole !== undefined && !agentRoles.includes(body.mentionedRole as typeof agentRoles[number])) || (body.versionId && (typeof body.versionId !== 'string' || !uuid.test(body.versionId)))) return json({ error: 'Invalid comment.' }, 400);
+ if (!body || typeof body.requestId !== 'string' || !uuid.test(body.requestId) || typeof body.projectId !== 'string' || !uuid.test(body.projectId) || typeof body.text !== 'string' || !body.text.trim() || body.text.length > 2000 || !anchors.includes(String(body.anchor)) || (body.mentionedRole !== null && body.mentionedRole !== undefined && !agentRoles.includes(body.mentionedRole as typeof agentRoles[number])) || (body.versionId && (typeof body.versionId !== 'string' || !uuid.test(body.versionId)))) return json({ error: 'Invalid comment.' }, 400);
  const project = await projectFor(client, body.projectId);
  if (!project) return json({ error: 'Project not found.' }, 404);
  if (body.versionId) {
   const { data: version } = await client.from('studio_versions').select('id').eq('id', body.versionId).eq('project_id', project.id).eq('workspace_id', project.workspace_id).single();
   if (!version) return json({ error: 'Version not found.' }, 404);
  }
- const { data, error } = await adminClient().from('studio_agent_notes').insert({ project_id: project.id, workspace_id: project.workspace_id, version_id: body.versionId || null, author_role: 'human', mentioned_role: body.mentionedRole || null, anchor: body.anchor, body: body.text.trim() }).select('*').single();
- if (error || !data) return json({ error: 'Comment could not be saved. Apply the latest Supabase migration.' }, 503);
- return json({ note: data }, 201);
+ const { data, error } = await adminClient().rpc('enqueue_studio_task', {
+  p_project: project.id, p_actor: user.id, p_request: body.requestId,
+  p_text: body.text.trim(), p_role: body.mentionedRole || 'creative_director', p_version: body.versionId || null,
+ });
+ if (error || !data) {
+  if(error) console.error('Studio task enqueue failed:',error.code,error.message);
+  return json({ error: ['PGRST202','42883','42P01'].includes(error?.code || '') ? 'Agent tasks need the latest database migration before messages can be sent.' : 'Your message could not be queued. Please retry.' }, 503);
+ }
+ if (data.status === 'not_found') return json({ error: 'Project or version not found.' }, 404);
+ if (data.status === 'full') return json({ error: 'Your workspace has 20 pending tasks. Wait for work to finish or cancel a task.' }, 429);
+ if (data.status === 'conflict') return json({ error: 'This message request was already used. Please send a new message.' }, 409);
+ return json({ note: data.note, task: data.task ? {...data.task,...taskDisplay(data.task)} : data.task }, data.status === 'replayed' ? 200 : 201);
 }

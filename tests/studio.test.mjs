@@ -25,6 +25,10 @@ test('renderer escapes model content and restricts destinations and page themes'
  assert.ok(html.includes('&lt;script&gt;'));
  assert.ok(!html.includes('<script>'));
  assert.ok(html.includes('default-src'));
+ const withoutDestination=renderDesign(design,null);
+ assert.match(withoutDestination,/<button class="button" type="button" disabled>/);
+ assert.doesNotMatch(withoutDestination,/href="(?:null|undefined)"/);
+ assert.throws(()=>renderDesign(design,'javascript:alert(1)'));
  for (const url of ['javascript:alert(1)', 'data:text/html,test', 'http://example.com', 'https://name:secret@example.com']) assert.equal(validDestination(url), false);
  assert.throws(() => renderDesign({ ...design, palette: 'url(evil)' }, 'https://example.com'));
  assert.throws(() => renderDesign({ ...design, features: [] }, 'https://example.com'));
@@ -37,24 +41,23 @@ test('generated design sections can be reordered safely', () => {
  assert.throws(()=>renderDesign({...design,sectionOrder:['hero','hero','closing']},'https://example.com'));
 });
 
-test('generation and revision send the correct context, validate output, and retain actual token usage', async () => {
- let payload;
- const request = async (url, options) => {
-  assert.equal(url, 'https://api.openai.com/v1/responses');
-  payload = JSON.parse(options.body);
-  assert.equal(payload.store, false);
-  assert.equal(payload.text.format.strict, true);
-  return Response.json({ status: 'completed', model: 'gpt-4.1-mini', output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify(design) }] }], usage: { input_tokens: 300, output_tokens: 200 } });
+test('generation and revision share the component pipeline and retain canvas context and total usage',async()=>{
+ const payloads=[];
+ const request=async(url,options)=>{
+  assert.equal(url,'https://api.openai.com/v1/responses');
+  const payload=JSON.parse(options.body);payloads.push(payload);assert.equal(payload.store,false);assert.equal(payload.text.format.strict,true);
+  const root={id:'screen',parentId:null,type:'container',layoutMode:'VERTICAL',properties:{backgroundColor:'#ffffff'}};
+  const nodes=payload.instructions.includes('UX Architecture Agent')?[root]:payload.instructions.includes('UI Design Agent')?[{id:'headline',parentId:'screen',type:'text',properties:{text:'Welcome'}},{id:'primary',parentId:'screen',type:'button',properties:{text:'Get started'}}]:[];
+  const value=payload.text.format.name==='pipeline_audit'?{summary:'Passed',issues:[]}:{mode:'edit',summary:'Updated the screen.',upsert_nodes:nodes,delete_ids:[],handoff:null,stage_complete:true};
+  return Response.json({status:'completed',model:'gpt-4.1-mini',usage:{input_tokens:300,output_tokens:200},output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(value)}]}]});
  };
- const first = await generateDesign({ key: 'test-only', brief: 'Create a studio landing page.' }, request);
- assert.equal(first.input_tokens, 300);
- assert.equal(JSON.parse(payload.input).previous, null);
- await generateDesign({ key: 'test-only', brief: 'Create a studio landing page.', previous: first.document, feedback: 'Make it warmer.' }, request);
- assert.equal(JSON.parse(payload.input).feedback, 'Make it warmer.');
- assert.deepEqual(JSON.parse(payload.input).previous, design);
- for (const response of [Response.json({}, { status: 401 }), Response.json({}, { status: 429 }), Response.json({ status: 'incomplete' }), Response.json({ status: 'completed', output: [{ type: 'message', content: [{ type: 'refusal' }] }] }), Response.json({ status: 'completed', output: [] })]) {
-  await assert.rejects(generateDesign({ key: 'test-only', brief: 'test' }, async () => response));
- }
+ const first=await generateDesign({key:'test-only',brief:'Create a studio page.'},request);
+ assert.equal(first.input_tokens,1500);assert.equal(first.document.kind,'canvas');
+ assert.equal(JSON.parse(payloads[0].input).current_canvas.nodes.length,0);
+ await generateDesign({key:'test-only',brief:'Create a studio page.',previous:first.document,feedback:'Make it warmer.'},request);
+ assert.equal(JSON.parse(payloads[5].input).instruction,'Make it warmer.');
+ assert.equal(JSON.parse(payloads[5].input).current_canvas.nodes[0].id,'screen');
+ for(const response of [Response.json({}, {status:401}),Response.json({}, {status:429}),Response.json({status:'incomplete'}),Response.json({status:'completed',output:[{type:'message',content:[{type:'refusal'}]}]}),Response.json({status:'completed',output:[]})])await assert.rejects(generateDesign({key:'test-only',brief:'test'},async()=>response));
 });
 
 test('studio RLS isolates tenants, protects credentials and versions, and enforces persistent generation locks', async () => {

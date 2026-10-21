@@ -3,7 +3,7 @@ import { adminClient, authConfig, sessionClient } from '@/lib/studio/supabase';
 import { openKey } from '@/lib/studio/vault.mjs';
 import { replyAsAgent, replyAsChatGPT } from '@/lib/studio/agent-chat';
 import { agentRoles } from '@/lib/studio/agent-roles';
-import { withProviderFallback } from '@/lib/studio/provider-fallback.ts';
+import { withProviderFallback, preferredProvider } from '@/lib/studio/provider-fallback.ts';
 import { hasChatGPTPlan } from '@/lib/studio/chatgpt-oauth';
 
 export const runtime = 'nodejs';
@@ -45,25 +45,27 @@ export async function POST(request: Request, { params }: { params: Promise<{ rol
  catch { return json({ error: 'Invalid message.' }, 400); }
  if (typeof body?.text !== 'string' || !body.text.trim() || body.text.length > 4000 || (body.sharedThread !== undefined && typeof body.sharedThread !== 'boolean')) return json({ error: 'Write a message under 4,000 characters.' }, 400);
  const admin = adminClient();
- const [{ data: prior, error: priorError }, { data: notes, error: notesError }, { data: latestVersion, error: versionError }, { data: credential }, planConnected] = await Promise.all([
+ const [{ data: prior, error: priorError }, { data: notes, error: notesError }, { data: latestVersion, error: versionError }, { data: credential }, {data:routerCredential,error:routerError}, {data:groqCredential,error:groqError}, planConnected] = await Promise.all([
   ctx.client.from('studio_agent_messages').select('author_kind,body').eq('project_id', ctx.project.id).eq('workspace_id', ctx.project.workspace_id).eq('agent_role', ctx.role).order('created_at', { ascending: false }).limit(12),
   ctx.client.from('studio_agent_notes').select('author_role,mentioned_role,anchor,body').eq('project_id', ctx.project.id).order('created_at', { ascending: false }).limit(20),
   ctx.client.from('studio_versions').select('id,document').eq('project_id', ctx.project.id).eq('workspace_id', ctx.project.workspace_id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
   admin.from('studio_keys').select('ciphertext').eq('workspace_id', ctx.project.workspace_id).maybeSingle(),
+  admin.from('studio_openrouter_keys').select('ciphertext,model').eq('workspace_id',ctx.project.workspace_id).maybeSingle(),
+  admin.from('studio_groq_keys').select('ciphertext,model').eq('workspace_id',ctx.project.workspace_id).maybeSingle(),
   hasChatGPTPlan(ctx.project.workspace_id),
  ]);
- if (priorError || notesError || versionError) return json({ error: 'Project context could not be loaded. Please try again.' }, 503);
- const available = { api: !!credential, chatgpt: planConnected };
- if (!available.api && !available.chatgpt) return json({ error: 'Connect ChatGPT or an OpenAI API key in Connections first.' }, 400);
+ if (priorError || notesError || versionError || (routerError&&routerError.code!=='PGRST205') || (groqError&&groqError.code!=='PGRST205')) return json({ error: 'Project context could not be loaded. Please try again.' }, 503);
+ const available = { api: !!credential, chatgpt: planConnected, openrouter:!!routerCredential, groq:!!groqCredential };
+ if (!available.api && !available.chatgpt && !available.openrouter && !available.groq) return json({ error: 'Connect Groq, OpenRouter, ChatGPT, or an OpenAI API key in Connections first.' }, 400);
  const token = randomUUID();
  const { data: allowed, error: lockError } = await admin.rpc('reserve_studio_generation', { workspace: ctx.project.workspace_id, token });
  if (lockError) return json({ error: 'Agent chat is temporarily unavailable.' }, 503);
  if (!allowed) return json({ error: 'Another model request is running, or the daily limit has been reached. Try again later.' }, 429);
  try {
   const input = { brief: ctx.project.brief, document: latestVersion?.document || null, notes: [...(notes || [])].reverse().slice(-10).map(note => ({ ...note, body: note.body.slice(0, 800) })), messages: [...(prior || [])].reverse().map(message => ({ ...message, body: message.body.slice(0, 1800) })), text: body.text.trim() };
-  const attempt = await withProviderFallback({ preferred: available.api ? 'api' : 'chatgpt', available, run: provider => provider === 'api'
-   ? replyAsAgent({ ...input, key: openKey(credential!.ciphertext, ctx.project.workspace_id), role: ctx.role })
-   : replyAsChatGPT({ ...input, workspace: ctx.project.workspace_id, role: ctx.role }) });
+  const attempt = await withProviderFallback({ preferred: preferredProvider(available), available, run: provider => provider === 'chatgpt'
+   ? replyAsChatGPT({ ...input, workspace: ctx.project.workspace_id, role: ctx.role })
+   : replyAsAgent({ ...input, key: openKey((provider==='openrouter'?routerCredential:provider==='groq'?groqCredential:credential)!.ciphertext, ctx.project.workspace_id), role: ctx.role,provider,model:provider==='openrouter'?routerCredential!.model:provider==='groq'?groqCredential!.model:undefined }) });
   const result = attempt.value;
   const now = Date.now();
   const rows = await admin.from('studio_agent_messages').insert([
@@ -83,7 +85,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ rol
   return json({ messages: rows.data, sharedNote, switchedFrom: attempt.switchedFrom, usage: { input_tokens: result.input_tokens, output_tokens: result.output_tokens, model: result.model } }, 201);
  } catch (error) {
   const message = error instanceof Error ? error.message : '';
-  const safe = /^(OpenAI|ChatGPT|The agent)/.test(message);
+  const safe = /^(OpenAI|OpenRouter|ChatGPT|The agent)/.test(message);
   return json({ error: safe ? message : 'The agent could not finish this reply. Please try again.' }, 502);
  } finally { await admin.rpc('release_studio_generation', { workspace: ctx.project.workspace_id, token }); }
 }

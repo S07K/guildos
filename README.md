@@ -62,3 +62,5 @@ npm run test:e2e
 Browser tests cover desktop signup and duplicates through the real API with a database assertion, mobile overflow and retry behavior, reduced motion, rate-limit feedback, and the disabled image optimizer. They launch a production server on port 3100 with a temporary SQLite file. If using an existing Chromium install, set `PLAYWRIGHT_EXECUTABLE_PATH` to its binary.
 
 Run `npm run verify` for tests, build, the full dependency audit, and browser checks. `npm run audit:production` isolates runtime findings. `.github/workflows/checks.yml` runs application checks and independent full/production audits on push and pull requests once the repository is hosted on GitHub, retaining audit JSON artifacts even on failure. See [current results and remaining blockers](docs/predeploy-checks.md).
+
+Production pushes now run database migrations before publishing the root app to Vercel. Configure the four GitHub secrets and reconcile any manually applied SQL using the [production deployment guide](docs/deployment.md). Direct Vercel Git deployments from `main` are disabled so they cannot bypass this ordering.

@@ -7,6 +7,7 @@ const theme = createTheme({
  typography: { fontFamily: 'var(--font-sans), sans-serif', fontSize: 14, h4: { fontSize: '1.8rem', fontWeight: 650, letterSpacing: '-.035em' }, h5: { fontSize: '1.35rem', fontWeight: 650, letterSpacing: '-.025em' }, h6: { fontSize: '1rem', fontWeight: 600 }, body2: { fontSize: '.875rem', letterSpacing: 0 }, button: { textTransform: 'none', fontWeight: 600 }, caption: { fontSize: '.75rem' } },
  shape: { borderRadius: 10 },
  components: {
+  MuiSkeleton: {defaultProps:{animation:'wave'},styleOverrides:{root:{'@media (prefers-reduced-motion: reduce)':{animation:'none','&::after':{animation:'none'}}}}},
   MuiButton: { defaultProps: { disableElevation: true }, styleOverrides: { root: { borderRadius: 8, minHeight: 38, paddingInline: 16 }, sizeSmall: { minHeight: 32, fontSize: 12 } } },
   MuiIconButton: { styleOverrides: { root: { borderRadius: 7 } } },
   MuiTextField: { defaultProps: { size: 'small', fullWidth: true } },

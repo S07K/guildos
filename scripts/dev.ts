@@ -22,8 +22,8 @@ function stop(code = 0) {
  }, 5000);
  Promise.all(children.map(child => child.exitCode !== null ? Promise.resolve() : new Promise<void>(done => child.once('exit', () => done())))).then(() => { clearTimeout(timeout); process.exit(code); });
 }
-function launch(file: string, args: string[], env: NodeJS.ProcessEnv) {
- const child = spawn(process.execPath, [resolve(file), ...args], { env, stdio: 'inherit', detached: process.platform !== 'win32' });
+function launch(file: string, args: string[], env: NodeJS.ProcessEnv, nodeArgs: string[] = []) {
+ const child = spawn(process.execPath, [...nodeArgs, resolve(file), ...args], { env, stdio: 'inherit', detached: process.platform !== 'win32' });
  children.push(child);
  child.once('error', error => { console.error(`Could not start ${file}: ${error.message}`); stop(1); });
  child.once('exit', code => { if (!stopping) stop(code || 1); });
@@ -34,6 +34,8 @@ process.on('SIGTERM', () => stop());
 
 async function start() {
  const env = { ...process.env };
+ // Codex-managed authentication is confined to the local development runner.
+ env.STUDIO_CHATGPT_AUTH ||= env.OPENAI_CLIENT_ID ? 'oauth' : 'codex';
  const serviceUrl = new URL(env.AI_SIGNIN_SERVICE_URL || 'http://127.0.0.1:8787');
  const localService = ['localhost', '127.0.0.1', '[::1]'].includes(serviceUrl.hostname);
  const serviceReady = !!env.SUPABASE_URL && !!env.SUPABASE_SECRET_KEY;
@@ -68,12 +70,15 @@ async function start() {
   if (stopping) return;
   if (!ready) throw new Error('The local AI sign-in service did not start. Check whether its port is already in use.');
   console.log(`GuildOS AI sign-in service ready at ${serviceUrl.origin}`);
-  if (!env.OPENAI_CLIENT_ID) console.log('ChatGPT sign-in is waiting for OPENAI_CLIENT_ID and OpenAI integration approval.');
+  if (env.STUDIO_CHATGPT_AUTH === 'codex') console.log('Local ChatGPT device sign-in enabled through Codex CLI (no client ID required).');
  } else if (localService) {
   console.log('AI sign-in service disabled: configure SUPABASE_URL and SUPABASE_SECRET_KEY to enable it.');
  } else {
   console.log(`Using AI sign-in service at ${serviceUrl.origin}.`);
  }
- if (!stopping) launch('node_modules/next/dist/bin/next', ['dev', '--webpack', ...process.argv.slice(2)], env);
+ if (!stopping) {
+  launch('node_modules/next/dist/bin/next', ['dev', '--webpack', ...process.argv.slice(2)], env);
+  if (serviceReady) launch('scripts/agent-worker.ts', [], env, ['--watch']);
+ }
 }
 start().catch(error => { console.error(error instanceof Error ? error.message : 'Development startup failed.'); stop(1); });

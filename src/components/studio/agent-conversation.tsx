@@ -27,7 +27,7 @@ export function AgentConversation({ projectId, role, open, onClose, onSelectRole
    const response = await fetch(`/api/studio/agents/${role}/messages?projectId=${encodeURIComponent(projectId)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: message }) });
    const data = await response.json(); if (!response.ok) throw new Error(data.error || `${identity.persona} could not reply.`);
    setMessages(items => [...items, ...data.messages]); setText('');
-   if (data.switchedFrom) setNotice(`Usage limit reached. Continued with ${data.usage?.model?.startsWith('chatgpt/') ? 'your ChatGPT plan' : 'your OpenAI API key'}.`);
+   if (data.switchedFrom) setNotice(`Usage limit reached. Continued with ${data.usage?.model?.startsWith('chatgpt/') ? 'your ChatGPT plan' : data.usage?.model?.startsWith('openrouter/')?'OpenRouter':data.usage?.model?.startsWith('groq/')?'Groq':'your OpenAI API key'}.`);
   } catch (cause) { setError(cause instanceof Error ? cause.message : 'The agent could not reply.'); }
   finally { setLoading(false); }
  }

@@ -1,0 +1,139 @@
+import { normalizeUiIconName, semanticIconIssue } from './ui-icons.ts';
+import { containingFrame, type CanvasDocument, type CanvasNode } from './canvas.ts';
+
+export type CanvasIssue = { key:string; message:string };
+
+function textBounds(node:CanvasNode) {
+ const size=node.fontSize;
+ const lineHeight=node.lineHeight??1.2;
+ const charsPerLine=Math.max(1,Math.floor(node.width/(size*0.55)));
+ const lines=node.text.split('\n').reduce((sum,line)=>sum+Math.max(1,Math.ceil(line.length/charsPerLine)),0);
+ const occupiedHeight=Math.min(node.height,lines*size*lineHeight);
+ const y=node.y+(node.verticalAlign==='bottom'?node.height-occupiedHeight:node.verticalAlign==='middle'?(node.height-occupiedHeight)/2:0);
+ return {x:node.x,y,width:node.width,height:occupiedHeight,neededHeight:lines*size*lineHeight};
+}
+
+function scope(node:CanvasNode,document:CanvasDocument) {
+ return node.parentId||containingFrame(node,document.nodes)?.id||null;
+}
+
+function overlaps(a:CanvasNode,b:CanvasNode) {
+ const aa=textBounds(a),bb=textBounds(b);
+ const overlapX=Math.min(aa.x+aa.width,bb.x+bb.width)-Math.max(aa.x,bb.x);
+ const overlapY=Math.min(aa.y+aa.height,bb.y+bb.height)-Math.max(aa.y,bb.y);
+ return overlapX>Math.min(aa.width,bb.width)*.25&&overlapY>Math.min(aa.height,bb.height)*.35;
+}
+
+/** Conservative geometry checks. Issues are compared before and after agent edits. */
+export function canvasQualityIssues(document:CanvasDocument):CanvasIssue[] {
+ const texts=document.nodes.filter(node=>node.type==='text'&&!node.flow&&!node.hidden&&node.text.trim());
+ const result:CanvasIssue[]=componentQualityIssues(document);
+ for(const node of texts) {
+  const bounds=textBounds(node);
+  if(bounds.neededHeight>node.height+Math.max(8,node.fontSize*.4)) result.push({key:`overflow:${node.id}`,message:`“${node.name}” needs a taller text box.`});
+ }
+ for(let i=0;i<texts.length;i++) for(let j=i+1;j<texts.length;j++) {
+  const a=texts[i],b=texts[j];
+  if(scope(a,document)===scope(b,document)&&overlaps(a,b)) {
+   const ids=[a.id,b.id].sort();
+   result.push({key:`overlap:${ids.join(':')}`,message:`Text layers “${a.name}” and “${b.name}” overlap.`});
+  }
+ }
+ return result;
+}
+
+/** Fit text and move only agent-edited layers into free space in their own frame. */
+export function repairCanvasTextLayout(document:CanvasDocument,editableIds:Set<string>):CanvasDocument {
+ const nodes=document.nodes.map(node=>({...node}));
+ const result={...document,nodes};
+ const frames=new Map(nodes.filter(node=>node.type==='frame').map(node=>[node.id,node]));
+ for(const node of nodes) {
+  if(node.flow||node.type!=='text'||!editableIds.has(node.id)||node.hidden||!node.text.trim())continue;
+  const needed=Math.ceil(textBounds(node).neededHeight);
+  if(needed>node.height)node.height=Math.min(20000,needed);
+  const frame=frames.get(scope(node,result)||'');
+  if(frame&&node.y+node.height>frame.y+frame.height)node.y=Math.max(frame.y,frame.y+frame.height-node.height);
+ }
+ const texts=nodes.filter(node=>node.type==='text'&&!node.flow&&!node.hidden&&node.text.trim());
+ for(const node of texts.filter(item=>editableIds.has(item.id)).reverse()) {
+  const frame=frames.get(scope(node,result)||'');
+  const area=frame||{x:0,y:0,width:document.width,height:document.height};
+  const peers=texts.filter(item=>item.id!==node.id&&scope(item,result)===scope(node,result));
+  for(let pass=0;pass<Math.min(20,peers.length+1)&&peers.some(peer=>overlaps(node,peer));pass++) {
+   const candidates=peers.flatMap(peer=>[
+    {x:node.x,y:peer.y+peer.height+8},
+    {x:peer.x+peer.width+8,y:node.y},
+    {x:node.x,y:peer.y-node.height-8},
+    {x:peer.x-node.width-8,y:node.y},
+   ]).filter(candidate=>candidate.x>=area.x&&candidate.y>=area.y&&candidate.x+node.width<=area.x+area.width&&candidate.y+node.height<=area.y+area.height&&peers.every(peer=>!overlaps({...node,...candidate},peer)))
+    .sort((a,b)=>Math.abs(a.x-node.x)+Math.abs(a.y-node.y)-Math.abs(b.x-node.x)-Math.abs(b.y-node.y));
+   if(!candidates.length)break;
+   node.x=candidates[0].x;node.y=candidates[0].y;
+  }
+ }
+ return result;
+}
+
+const luminance=(hex:string)=>{
+ const channels=[1,3,5].map(start=>parseInt(hex.slice(start,start+2),16)/255).map(channel=>channel<=0.04045?channel/12.92:((channel+0.055)/1.055)**2.4);
+ return channels[0]*0.2126+channels[1]*0.7152+channels[2]*0.0722;
+};
+export function contrastRatio(foreground:string,background:string) {
+ const a=luminance(foreground),b=luminance(background);
+ return (Math.max(a,b)+0.05)/(Math.min(a,b)+0.05);
+}
+/** Checks actual resolved colors and axis relationships, independent of model claims. */
+export function componentQualityIssues(document:CanvasDocument):CanvasIssue[] {
+ const issues:CanvasIssue[]=[];
+ const byId=new Map(document.nodes.map(node=>[node.id,node]));
+ for(const node of document.nodes.filter(node=>node.flow&&!node.hidden)) {
+  const ancestors:CanvasNode[]=[];let parent=byId.get(node.parentId||'');
+  while(parent&&!ancestors.includes(parent)&&ancestors.length<32){ancestors.push(parent);parent=byId.get(parent.parentId||'');}
+  if(ancestors.some(item=>item.hidden))continue;
+  if(node.radius%8||(node.contentPadding??0)%8||node.layout&&(node.layout.gap%8||node.layout.padding%8))issues.push({key:`grid:${node.id}`,message:`“${node.name}” must use multiples of 8 for spacing and radius.`});
+  for(const axis of ['width','height'] as const)if(node.sizing?.[axis]==='fill-container'&&ancestors[0]?.sizing?.[axis]==='hug-contents')issues.push({key:`axis:${node.id}:${axis}`,message:`“${node.name}” cannot FILL ${axis} inside a parent that HUGs ${axis}; use HUG or size the parent.`});
+  if(node.type==='text'&&node.sizing?.height!=='hug-contents')issues.push({key:`text-sizing:${node.id}`,message:`“${node.name}” text height must HUG content.`});
+  if(node.iconName&&!normalizeUiIconName(node.iconName))issues.push({key:`icon-dictionary:${node.id}`,message:`“${node.name}” must use a semantic Lucide UI dictionary key.`});
+  if(node.iconName){const labels=node.type==='icon'?document.nodes.filter(sibling=>sibling.parentId===node.parentId&&sibling.type==='text').map(sibling=>sibling.text).join(' '):'';const problem=semanticIconIssue(normalizeUiIconName(node.iconName)||node.iconName,`${node.name} ${node.text} ${labels}`.replace(/[-_]/g,' '));if(problem)issues.push({key:`icon-meaning:${node.id}`,message:problem});}
+  if(node.type==='icon'){
+   const row=ancestors[0];
+   if(!row?.layout||row.layout.direction!=='row'||row.layout.alignItems!=='center'||row.layout.gap!==8)issues.push({key:`icon-row:${node.id}`,message:`“${node.name}” needs a HORIZONTAL center-aligned icon/text row with itemSpacing 8.`});
+   if(![16,20].includes(node.width)||node.width!==node.height||node.sizing?.width!=='fixed'||node.sizing?.height!=='fixed')issues.push({key:`icon-size:${node.id}`,message:`“${node.name}” needs a fixed 16x16 or 20x20 inline-flex icon wrapper.`});
+   if(node.text.trim())issues.push({key:`icon-text:${node.id}`,message:`“${node.name}” must use iconName, never raw text or slash symbols.`});
+   const label=document.nodes.find(sibling=>sibling.parentId===node.parentId&&sibling.type==='text'&&!sibling.hidden);
+   if(label){
+    if(label.contentPadding)issues.push({key:`icon-label-padding:${node.id}`,message:`“${label.name}” needs padding 0 so the icon/text gap stays exactly 8px.`});
+    if(node.width!==(label.fontSize>16?20:16))issues.push({key:`icon-typography:${node.id}`,message:`“${node.name}” icon size must match adjacent label typography (16px or 20px).`});
+   }
+
+  }
+  if(node.iconName&&['button','input'].includes(node.type)&&(!node.layout||node.layout.direction!=='row'||node.layout.alignItems!=='center'||node.layout.gap!==8))issues.push({key:`icon-control:${node.id}`,message:`“${node.name}” needs HORIZONTAL layout, center alignment and itemSpacing 8.`});
+  if(!['text','button','input'].includes(node.type)||!node.text.trim())continue;
+  const foreground=node.type==='text'?node.fill:node.textColor||'#202b38';
+  const surface=(item:CanvasNode)=>item.type==='text'?item.backgroundColor:!['image','icon','line','path'].includes(item.type)?item.fill:undefined;
+  let background=node.type==='text'?node.backgroundColor:node.fill;
+  if(!background)background=ancestors.map(surface).find(Boolean)||document.background;
+  const ratio=contrastRatio(foreground,background);
+  const required=node.fontSize>=24||node.fontSize>=18.66&&node.fontWeight>=700?3:4.5;
+  if(ratio<required)issues.push({key:`contrast:${node.id}`,message:`“${node.name}” contrast is ${ratio.toFixed(2)}:1; needs ${required}:1.`});
+ }
+ return issues;
+}
+
+
+/** Final review gate: incremental empty frames are allowed while specialists are building. */
+export function screenCompositionIssues(document:CanvasDocument):CanvasIssue[] {
+ const issues:CanvasIssue[]=[];
+ const roots=document.nodes.filter(node=>node.flow&&!node.parentId&&!node.hidden);
+ if(roots.length!==1)issues.push({key:'single-screen',message:'Review exactly one cohesive mobile screen; multiple screen roots and empty canvases cannot be approved.'});
+ for(const root of roots){
+  if(!root.screen){issues.push({key:`screen:${root.id}`,message:`“${root.name}” must be a Screen Frame, with its content nested inside.`});continue;}
+  if(root.width!==375||root.height<812||root.layout?.direction!=='column')issues.push({key:`mobile-screen:${root.id}`,message:'The active screen needs a single vertical 375px mobile viewport with minimum 812px height.'});
+  const descendants=document.nodes.filter(node=>{
+   if(node.hidden)return false;
+   let parent=node.parentId;for(let depth=0;parent&&depth<32;depth++){const ancestor=document.nodes.find(item=>item.id===parent);if(ancestor?.hidden)return false;if(parent===root.id)return true;parent=ancestor?.parentId;}return false;
+  });
+  if(!descendants.some(node=>node.type==='text'&&node.text.trim())||!descendants.some(node=>['button','input'].includes(node.type)&&node.text.trim()))issues.push({key:`screen-content:${root.id}`,message:`“${root.name}” needs readable screen content and a labeled primary action or input; isolated widgets do not complete a screen.`});
+ }
+ return issues;
+}

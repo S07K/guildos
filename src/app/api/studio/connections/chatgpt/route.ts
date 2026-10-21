@@ -1,4 +1,5 @@
 import { authConfig, sessionClient } from '@/lib/studio/supabase';
+import { localCodex, localCodexEnabled } from '@/lib/studio/codex-local';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -36,6 +37,9 @@ async function serviceRequest(path: string, init: RequestInit = {}) {
 
 export async function GET(request: Request) {
  const ctx = await context(request); if ('response' in ctx) return ctx.response;
+ if (localCodexEnabled()) {
+  try { return json(await localCodex.status(ctx.workspaceId)); } catch(error) { return localError(error); }
+ }
  return serviceRequest(`/api/v1/connections/openai?workspaceId=${encodeURIComponent(ctx.workspaceId)}`);
 }
 
@@ -43,11 +47,23 @@ export async function POST(request: Request) {
  const ctx = await context(request); if ('response' in ctx) return ctx.response;
  let body; try { body = await request.json(); } catch { return json({ error: 'Invalid request.' }, 400); }
  if (body?.action !== 'start') return json({ error: 'Invalid action.' }, 400);
+ if (localCodexEnabled()) {
+  try { return json(await localCodex.start(ctx.workspaceId)); } catch(error) { return localError(error); }
+ }
  const returnTo = new URL('/studio/settings', process.env.STUDIO_APP_URL || new URL(request.url).origin).toString();
  return serviceRequest('/api/v1/oauth/openai/start', { method: 'POST', body: JSON.stringify({ workspaceId: ctx.workspaceId, returnTo }) });
 }
 
 export async function DELETE(request: Request) {
  const ctx = await context(request); if ('response' in ctx) return ctx.response;
+ if (localCodexEnabled()) {
+  try { await localCodex.disconnect(ctx.workspaceId); return json({ status: 'idle' }); } catch(error) { return localError(error); }
+ }
  return serviceRequest(`/api/v1/connections/openai?workspaceId=${encodeURIComponent(ctx.workspaceId)}`, { method: 'DELETE' });
+}
+
+function localError(error: unknown) {
+ const message = error instanceof Error ? error.message : '';
+ const safe = /^(Install the Codex|Codex |ChatGPT |This workspace|The studio key vault)/.test(message) ? message : 'Could not load this local ChatGPT connection. Retry sign-in.';
+ return json({ status: 'error', error: safe }, 503);
 }

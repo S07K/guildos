@@ -1,24 +1,44 @@
 'use client';
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Avatar, Box, Button, Chip, CircularProgress, IconButton, Paper, Stack, TextField, Typography } from '@mui/material';
+import { Alert, Avatar, Box, Button, Chip, Skeleton, IconButton, Paper, Stack, TextField, Typography } from '@mui/material';
 import { dropdownSurfaceSx } from './dropdown-surface';
 import { ArrowUp, Hash, X } from 'lucide-react';
 import { agentRoles, agentIdentity, type AgentRole, type AgentAnchor } from '@/lib/studio/agent-roles';
+import { AgentProgress, type ReviewFeedback, type WaitingMessage } from './agent-progress';
+import { AgentWorkingIndicator } from './agent-working-indicator';
+import { TaskWaitNotice } from './task-wait-notice';
 import { AgentMark } from './agent-identity';
+import { ConversationSkeleton } from './loading-states';
 
 export type GuildNote = { id: string; version_id: string | null; author_role: AgentRole | 'human'; mentioned_role: AgentRole | null; anchor: AgentAnchor; body: string; created_at: string };
 const names: Record<AgentRole | 'human', string> = { human: 'You', ...Object.fromEntries(agentRoles.map(role => [role, agentIdentity[role].persona])) } as Record<AgentRole | 'human', string>;
 const mentionPattern = /(^|\s)@([\p{L}\p{N}_-]*)$/u;
 const layerMentionPattern = /(^|\s)#([\p{L}\p{N}_ -]*)$/u;
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function messageBody(note: GuildNote) {
+ if (note.author_role === 'human') return note.body;
+ const persona = agentIdentity[note.author_role].persona;
+ return note.body.replace(new RegExp(`^\\s*${persona}\\s*(?::|[–—-])\\s*`, 'i'), '');
+}
+async function conversationData(response:Response) {
+ if(!response.headers.get('content-type')?.includes('application/json')) throw new Error('The project conversation is temporarily unavailable. Please retry.');
+ try{return await response.json();}
+ catch{throw new Error('The project conversation returned an invalid response. Please retry.');}
+}
 
-export function GuildPanel({ projectId, versionId, currentAnchor, layers: layerOptions = [], addedNotes = [], initialMention = null, onInitialMentionUsed, selectedContext = null }: { projectId: string; versionId: string | null; currentAnchor: AgentAnchor; layers?: { id: string; name: string }[]; addedNotes?: GuildNote[]; initialMention?: AgentRole | null; onInitialMentionUsed?: () => void; selectedContext?: { id: string; name: string } | null }) {
+export function GuildPanel({ projectId, versionId, layers: layerOptions = [], addedNotes = [], initialMention = null, onInitialMentionUsed, selectedContext = null }: { projectId: string; versionId: string | null; layers?: { id: string; name: string }[]; addedNotes?: GuildNote[]; initialMention?: AgentRole | null; onInitialMentionUsed?: () => void; selectedContext?: { id: string; name: string } | null }) {
+ const [conversationLoaded, setConversationLoaded] = useState(false);
  const [notes, setNotes] = useState<GuildNote[]>(addedNotes);
  const [text, setText] = useState('');
+ const [workingAgents, setWorkingAgents] = useState<AgentRole[]>([]);
+ const [taskWaits, setTaskWaits] = useState<WaitingMessage[]>([]);
+ const [reviewFeedback, setReviewFeedback] = useState<ReviewFeedback|null>(null);
  const [composerContext, setComposerContext] = useState(selectedContext);
  const [error, setError] = useState('');
  const [saving, setSaving] = useState(false);
+ const pendingMessage = useRef<{payload:string;requestId:string}|null>(null);
+ const sending = useRef(false);
  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
  const [layerQuery, setLayerQuery] = useState<string | null>(null);
  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(0);
@@ -39,13 +59,14 @@ export function GuildPanel({ projectId, versionId, currentAnchor, layers: layerO
   let cancelled = false;
   let hasLoaded = false;
   const load = () => fetch(`/api/studio/notes?projectId=${encodeURIComponent(projectId)}`, { cache: 'no-store' }).then(async response => {
-   const data = await response.json();
+   const data = await conversationData(response);
    if (!response.ok) throw new Error(data.error || 'Could not load the project conversation.');
    if (!cancelled) {
+    setConversationLoaded(true);
     setNotes((current: GuildNote[]) => [...current.filter(note => !data.notes.some((fresh: GuildNote) => fresh.id === note.id)), ...data.notes].sort((a: GuildNote,b: GuildNote) => a.created_at.localeCompare(b.created_at)));
     if (!hasLoaded) { hasLoaded = true; setError(''); }
    }
-  }).catch(cause => { if (!cancelled) setError(cause instanceof Error ? cause.message : 'Could not load the project conversation.'); });
+  }).catch(cause => { if (!cancelled&&!hasLoaded) setError(cause instanceof Error ? cause.message : 'Could not load the project conversation.'); });
   void load();
   const interval = window.setInterval(() => void load(), 5000);
   return () => { cancelled = true; window.clearInterval(interval); };
@@ -71,7 +92,10 @@ export function GuildPanel({ projectId, versionId, currentAnchor, layers: layerO
   return () => observer.disconnect();
  }, []);
 
- const visible = useMemo(() => notes, [notes]);
+ function requestChanges(feedback: ReviewFeedback) {
+  setReviewFeedback(feedback); setComposerContext(null); setText('');
+  requestAnimationFrame(() => inputRef.current?.focus());
+ }
  function updateText(value: string, position: number) {
   setText(value); setCaret(position);
   const beforeCaret = value.slice(0, position);
@@ -98,24 +122,22 @@ export function GuildPanel({ projectId, versionId, currentAnchor, layers: layerO
  }
  async function submit() {
   const draftMessage = text.trim();
-  if (!draftMessage || saving) return;
-  const contextPrefix = composerContext ? `#${composerContext.name} ` : '';
+  if (!draftMessage || saving || sending.current) return;
+  const contextPrefix = reviewFeedback ? `Revise the completed work for: ${reviewFeedback.instruction.slice(0,500)}\nRequested changes: ` : composerContext ? `#${composerContext.name} ` : '';
   const message = `${contextPrefix}${draftMessage}`.slice(0, 2000);
   const mention = agentRoles.find(role => new RegExp(`@${agentIdentity[role].persona}\\b`, 'i').test(message)) || null;
-  setSaving(true); setError('');
+  sending.current = true; setSaving(true); setError('');
   try {
-   const response = await fetch('/api/studio/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectId, versionId, anchor: currentAnchor, mentionedRole: mention, text: message }) });
-   const data = await response.json();
+   const payload = JSON.stringify({ projectId, versionId: reviewFeedback?.versionId || versionId, anchor: 'page', mentionedRole: mention, text: message });
+   if (pendingMessage.current?.payload !== payload) pendingMessage.current = {payload,requestId:crypto.randomUUID()};
+   const response = await fetch('/api/studio/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({...JSON.parse(payload),requestId:pendingMessage.current.requestId}) });
+   const data = await conversationData(response);
    if (!response.ok) throw new Error(data.error || 'Could not send this message.');
-   setNotes(items => [...items, data.note]); setText(''); setMentionQuery(null); setLayerQuery(null);
-   if (mention) {
-    const replyResponse = await fetch(`/api/studio/agents/${mention}/messages?projectId=${encodeURIComponent(projectId)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: message, sharedThread: true }) });
-    const replyData = await replyResponse.json();
-    if (!replyResponse.ok || replyData.warning) throw new Error(replyData.error || replyData.warning || `${names[mention]} could not reply. Your message is in the channel.`);
-    if (replyData.sharedNote) setNotes(items => [...items, replyData.sharedNote]);
-   }
+   pendingMessage.current = null;
+   setNotes(items => [...items.filter(item => item.id !== data.note.id), data.note]); setText(''); setReviewFeedback(null); setMentionQuery(null); setLayerQuery(null);
+   window.dispatchEvent(new Event('guildos:tasks-updated'));
   } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not send this message.'); }
-  finally { setSaving(false); }
+  finally { sending.current = false; setSaving(false); }
  }
  const suggestions = mentionQuery === null ? [] : agentRoles.filter(role => `${agentIdentity[role].persona} ${agentIdentity[role].name}`.toLowerCase().includes(mentionQuery.toLowerCase()));
  const layerSuggestions = layerQuery === null ? [] : layerOptions.filter(item => item.name.toLowerCase().includes(layerQuery.toLowerCase())).slice(0, 8);
@@ -135,20 +157,24 @@ export function GuildPanel({ projectId, versionId, currentAnchor, layers: layerO
    <Box sx={{ minWidth: 0, flex: 1, overflow: 'hidden' }}><Typography variant="subtitle2" noWrap sx={{ fontWeight: 700, lineHeight: 1.3 }}>Project conversation</Typography><Typography variant="caption" noWrap color="text.secondary" sx={{ display: 'block' }}>Project-wide guild chat</Typography></Box>
   </Stack>
   <Box ref={feedRef} sx={{ flex: 1, minHeight: 0, overflowY: 'auto', px: 2, py: 2 }}>
-   {visible.length ? <Stack spacing={2} aria-label="Shared project conversation">{visible.map(note => <Stack key={note.id} direction="row" spacing={1.25} sx={{ alignItems: 'flex-start' }}>
+   {!conversationLoaded&&!notes.length?<ConversationSkeleton/>:notes.length ? <Stack spacing={2} aria-label="Shared project conversation">{notes.map(note => <Stack key={note.id} direction="row" spacing={1.25} sx={{ alignItems: 'flex-start' }}>
     {note.author_role === 'human' ? <Avatar sx={{ width: 32, height: 32, fontSize: 12, fontWeight: 700, bgcolor: '#e9eef2', color: '#526374' }}>Y</Avatar> : <AgentMark role={note.author_role} size={32}/>}
     <Box sx={{ minWidth: 0, flex: 1 }}>
      <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', flexWrap: 'wrap' }}><Typography variant="body2" sx={{ fontWeight: 700 }}>{names[note.author_role]}</Typography>{note.author_role !== 'human' && <Typography variant="caption" color="text.secondary">{agentIdentity[note.author_role].name}</Typography>}<Typography variant="caption" color="text.secondary">{new Date(note.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</Typography></Stack>
-     <Paper variant="outlined" sx={{ mt: .5, px: 1.5, py: 1.15, borderRadius: '4px 14px 14px 14px', bgcolor: note.author_role === 'human' ? '#f4f7f5' : 'background.paper' }}><Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', lineHeight: 1.55 }}>{note.body}</Typography></Paper>
-     <Stack direction="row" spacing={.75} sx={{ mt: .6, flexWrap: 'wrap' }}>{note.anchor !== 'page' && <Chip size="small" label={note.anchor} sx={{ height: 21, fontSize: 10 }}/ >}{note.mentioned_role && <Chip size="small" label={`@${names[note.mentioned_role]}`} sx={{ height: 21, fontSize: 10, bgcolor: agentIdentity[note.mentioned_role].tint, color: agentIdentity[note.mentioned_role].color }}/>}</Stack>
+     <Paper variant="outlined" sx={{ mt: .5, px: 1.5, py: 1.15, borderRadius: '4px 14px 14px 14px', bgcolor: note.author_role === 'human' ? '#f4f7f5' : 'background.paper' }}><Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', lineHeight: 1.55 }}>{messageBody(note).split(/(@(?:Ari|Noor|Pip|Mira|Vale)\b)/gi).map((part, index) => { const role = agentRoles.find(role => `@${agentIdentity[role].persona}`.toLowerCase() === part.toLowerCase()); return role ? <Box component="span" key={index} sx={{ color: agentIdentity[role].color, bgcolor: agentIdentity[role].tint, borderRadius: '3px', px: .25, fontWeight: 600 }}>{part}</Box> : part; })}</Typography></Paper>
+     {note.author_role === 'human' && taskWaits.some(item => item.noteId === note.id) && <TaskWaitNotice wait={taskWaits.find(item => item.noteId === note.id)!.wait}/>}
+     {note.author_role !== 'human' && note.anchor !== 'page' && <Chip size="small" label={note.anchor} sx={{ mt: .6, height: 21, fontSize: 10 }}/>}
     </Box>
-   </Stack>)}</Stack> : <Box sx={{ minHeight: '100%', display: 'grid', placeItems: 'center', px: 3 }}><Stack spacing={1} sx={{ textAlign: 'center', maxWidth: 300 }}><Typography variant="subtitle1" sx={{ fontWeight: 700 }}>Start the project conversation</Typography><Typography variant="body2" color="text.secondary">Share direction with the guild, or mention a specialist with @ to bring them in.</Typography></Stack></Box>}
+   </Stack>)}</Stack> : <Box sx={{ minHeight: 120, display: 'grid', placeItems: 'center', px: 3 }}><Stack spacing={1} sx={{ textAlign: 'center', maxWidth: 300 }}><Typography variant="subtitle1" sx={{ fontWeight: 700 }}>Start the project conversation</Typography><Typography variant="body2" color="text.secondary">Share direction with the guild, or mention a specialist with @ to bring them in.</Typography></Stack></Box>}
+   <AgentProgress projectId={projectId} onRequestChanges={requestChanges} onTaskWaits={setTaskWaits} onWorkingAgents={setWorkingAgents} revisionNotes={notes} conversationLoaded={conversationLoaded}/>
   </Box>
   {error && <Alert severity="error" sx={{ mx: 2, mb: 1 }}>{error}</Alert>}
   <Box sx={{ borderTop: '1px solid', borderColor: 'divider', p: 1.5, bgcolor: '#fbfcfb' }}>
+   <AgentWorkingIndicator roles={workingAgents}/>
    <Box sx={{ position: 'relative', p: 1.25, border: '1px solid #dfe6e1', borderRadius: '8px', bgcolor: 'background.paper', transition: 'border-color 120ms ease, box-shadow 120ms ease', '&:focus-within': { borderColor: '#789783', boxShadow: '0 0 0 3px rgba(56,102,80,.08)' } }}>
     <Box sx={{ minWidth: 0, position: 'relative', px: 1, py: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
      {(suggestions.length > 0 || layerSuggestions.length > 0) && <Paper role="listbox" aria-label={mentionQuery !== null ? 'Mention an agent' : 'Mention a layer'} sx={{ ...dropdownSurfaceSx, position: 'absolute', zIndex: 4, bottom: 'calc(100% + 12px)', left: 0, right: 0, boxSizing: 'border-box', maxHeight: 260, overflowX: 'hidden', overflowY: 'auto', p: .5 }}>{suggestions.map((role, index) => <Button key={role} ref={index === activeSuggestionIndex ? activeOptionRef : undefined} role="option" aria-selected={index === activeSuggestionIndex} onClick={() => insertMention(role)} fullWidth sx={{ minWidth: 0, justifyContent: 'flex-start', textTransform: 'none', color: 'text.primary', px: 1, py: .75, textAlign: 'left', bgcolor: index === activeSuggestionIndex ? '#f0f4f1' : 'transparent', '&:hover': { bgcolor: '#f0f4f1' } }}><Box sx={{ flex: 'none', lineHeight: 0 }}><AgentMark role={role} size={30}/></Box><Box sx={{ ml: 1, minWidth: 0, textAlign: 'left' }}><Typography variant="body2" noWrap sx={{ fontWeight: 700, lineHeight: 1.2 }}>{agentIdentity[role].persona}</Typography><Typography variant="caption" noWrap color="text.secondary">{agentIdentity[role].name}</Typography></Box></Button>)}{layerSuggestions.map((item, index) => <Button key={item.id} ref={index === activeSuggestionIndex ? activeOptionRef : undefined} role="option" aria-selected={index === activeSuggestionIndex} onClick={() => insertLayer(item.name)} fullWidth sx={{ minWidth: 0, justifyContent: 'flex-start', textTransform: 'none', color: 'text.primary', px: 1, py: .75, textAlign: 'left', bgcolor: index === activeSuggestionIndex ? '#f0f4f1' : 'transparent', '&:hover': { bgcolor: '#f0f4f1' } }}><Box sx={{ width: 30, height: 30, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: 1, bgcolor: '#eef3ef', color: 'primary.main' }}><Hash size={16}/></Box><Box sx={{ ml: 1, minWidth: 0, textAlign: 'left' }}><Typography variant="body2" noWrap sx={{ fontWeight: 650, lineHeight: 1.2 }}>{item.name}</Typography><Typography variant="caption" noWrap color="text.secondary">Layer</Typography></Box></Button>)}</Paper>}
+     {reviewFeedback && <Stack spacing={.5} sx={{minWidth:0}}><Chip size="small" label="Request changes" onDelete={()=>setReviewFeedback(null)} sx={{alignSelf:'flex-start'}}/><Typography variant="caption" color="text.secondary" sx={{overflowWrap:'anywhere'}}>What would you like changed?</Typography></Stack>}
      {composerContext && <Chip size="small" icon={<Hash size={14}/>} label={composerContext.name} onDelete={() => setComposerContext(null)} deleteIcon={<X size={14}/>} sx={{ alignSelf: 'flex-start', height: 26, borderRadius: '6px', bgcolor: '#3b496b', color: '#9bc8f2', '& .MuiChip-icon': { color: 'inherit', ml: .75 }, '& .MuiChip-deleteIcon': { color: 'inherit', mr: .5, '&:hover': { color: '#fff' } } }}/>}
      <Box sx={{ minWidth: 0, position: 'relative' }}>
       <Box ref={textOverlayRef} aria-hidden="true" sx={{ position: 'absolute', zIndex: 1, inset: 0, overflow: 'hidden', whiteSpace: 'pre-wrap', overflowWrap: 'break-word', wordBreak: 'break-word', pointerEvents: 'none', color: 'text.primary' }}>{highlightedMessage}</Box>
@@ -156,7 +182,7 @@ export function GuildPanel({ projectId, versionId, currentAnchor, layers: layerO
      </Box>
     </Box>
     <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'flex-end', mt: .5, minWidth: 0 }}>
-     <IconButton aria-label="Send message" color="primary" disabled={!text.trim() || saving} onClick={() => void submit()} sx={{ width: 32, height: 32, flex: 'none', borderRadius: '8px', bgcolor: 'primary.main', color: 'primary.contrastText', '&:hover': { bgcolor: 'primary.dark' }, '&.Mui-disabled': { bgcolor: 'action.disabledBackground', color: 'action.disabled' } }}>{saving ? <CircularProgress size={15} color="inherit"/> : <ArrowUp size={17}/>}</IconButton>
+     <IconButton aria-label="Send message" color="primary" disabled={!text.trim() || saving} onClick={() => void submit()} sx={{ width: 32, height: 32, flex: 'none', borderRadius: '8px', bgcolor: 'primary.main', color: 'primary.contrastText', '&:hover': { bgcolor: 'primary.dark' }, '&.Mui-disabled': { bgcolor: 'action.disabledBackground', color: 'action.disabled' } }}>{saving ? <Skeleton variant="rounded" width={15} height={15} sx={{bgcolor:'currentColor',opacity:.5}}/> : <ArrowUp size={17}/>}</IconButton>
     </Stack>
    </Box>
   </Box>

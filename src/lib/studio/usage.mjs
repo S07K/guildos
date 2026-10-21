@@ -2,6 +2,8 @@
 // https://developers.openai.com/api/docs/models/gpt-4.1-mini
 export function estimateCost(version) {
  if (version.model === 'manual-edit' && version.input_tokens === 0 && version.output_tokens === 0) return 0;
+ if (version.model === 'openrouter/free' || version.model === 'openrouter/openrouter/free' || /^openrouter\/.+:free$/.test(version.model)) return 0;
+ if (version.model === 'groq/openai/gpt-oss-120b' || version.model === 'openai/gpt-oss-120b') return (version.input_tokens * 0.15 + version.output_tokens * 0.60) / 1_000_000;
  if (!/^gpt-4\.1-mini(?:-2025-04-14)?$/.test(version.model)) return null;
  return (version.input_tokens * 0.4 + version.output_tokens * 1.6) / 1_000_000;
 }
