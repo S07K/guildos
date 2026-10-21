@@ -1,11 +1,12 @@
 -- Specialists can request a prerequisite from a colleague, then resume their own action.
-alter table public.studio_tasks add column handoff_count integer not null default 0 check(handoff_count between 0 and 3);
-alter table public.studio_tasks add column handoff_from_task_id uuid;
+alter table public.studio_tasks add column if not exists handoff_count integer not null default 0 check(handoff_count between 0 and 3);
+alter table public.studio_tasks add column if not exists handoff_from_task_id uuid;
+alter table public.studio_tasks drop constraint if exists studio_tasks_handoff_scope;
 alter table public.studio_tasks add constraint studio_tasks_handoff_scope
  foreign key(handoff_from_task_id,project_id,workspace_id)
  references public.studio_tasks(id,project_id,workspace_id) on delete cascade;
 
-create function public.handoff_studio_task(p_task uuid,p_token uuid,p_role text,p_instruction text,
+create or replace function public.handoff_studio_task(p_task uuid,p_token uuid,p_role text,p_instruction text,
  p_summary text,p_model text,p_input integer,p_output integer)
 returns jsonb language plpgsql security invoker set search_path=public as $$
 declare original public.studio_tasks%rowtype; helper_id uuid; root_id uuid; run_id uuid;

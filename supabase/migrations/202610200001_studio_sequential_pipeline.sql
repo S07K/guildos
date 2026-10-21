@@ -1,5 +1,5 @@
 -- Private, durable single-screen state. Only the final QA-approved draft becomes a version.
-create table public.studio_pipeline_drafts (
+create table if not exists public.studio_pipeline_drafts (
  task_id uuid primary key,
  project_id uuid not null,
  workspace_id uuid not null,
@@ -11,7 +11,25 @@ alter table public.studio_pipeline_drafts enable row level security;
 revoke all on public.studio_pipeline_drafts from public,anon,authenticated;
 grant all on public.studio_pipeline_drafts to service_role;
 
-create function public.init_studio_pipeline(p_task uuid,p_token uuid,p_state jsonb)
+-- Retire unfinished legacy children; restart their root prompt through all five stages.
+-- Saved versions remain untouched. Expired leases cannot publish through the new gate.
+do $$
+declare restarting uuid[];
+begin
+ -- On replay, the pipeline RPC already exists. Never restart current work or
+ -- cancel its children just because migration history is being adopted.
+ if to_regprocedure('public.init_studio_pipeline(uuid,uuid,jsonb)') is not null then
+  return;
+ end if;
+ select array_agg(id) into restarting from public.studio_tasks where parent_task_id is null and status in ('delegated','running');
+ update public.studio_tasks set status='cancelled',lease_token=null,lease_until=null,updated_at=now()
+ where parent_task_id is not null and status in ('queued','running');
+ update public.studio_tasks set status='queued',attempts=0,available_at=now(),error='',
+  lease_token=null,lease_until=null,delegation_id=null,updated_at=now()
+ where id=any(restarting);
+end $$;
+
+create or replace function public.init_studio_pipeline(p_task uuid,p_token uuid,p_state jsonb)
 returns jsonb language plpgsql security invoker set search_path=public as $$
 declare task public.studio_tasks%rowtype; draft jsonb;
 begin
@@ -32,7 +50,7 @@ begin
  return jsonb_build_object('status','initialized','state',draft);
 end $$;
 
-create function public.checkpoint_studio_pipeline(p_task uuid,p_token uuid,p_previous jsonb,p_next jsonb,
+create or replace function public.checkpoint_studio_pipeline(p_task uuid,p_token uuid,p_previous jsonb,p_next jsonb,
  p_summary text,p_model text,p_input integer,p_output integer)
 returns jsonb language plpgsql security invoker set search_path=public as $$
 declare task public.studio_tasks%rowtype; current_state jsonb; old_stage integer; next_stage integer; speaker text;
@@ -154,27 +172,14 @@ begin
  return true;
 end $$;
 
-create function public.reset_studio_pipeline() returns trigger language plpgsql security invoker set search_path=public as $$
+create or replace function public.reset_studio_pipeline() returns trigger language plpgsql security invoker set search_path=public as $$
 begin
  if old.status in ('blocked','failed','cancelled') and new.status='queued' then
   delete from public.studio_pipeline_drafts where task_id=new.id;
  end if;
  return new;
 end $$;
-create trigger reset_studio_pipeline after update of status on public.studio_tasks for each row execute function public.reset_studio_pipeline();
-
--- Retire unfinished legacy children; restart their root prompt through all five stages.
--- Saved versions remain untouched. Expired leases cannot publish through the new gate.
-do $$
-declare restarting uuid[];
-begin
- select array_agg(id) into restarting from public.studio_tasks where parent_task_id is null and status in ('delegated','running');
- update public.studio_tasks set status='cancelled',lease_token=null,lease_until=null,updated_at=now()
- where parent_task_id is not null and status in ('queued','running');
- update public.studio_tasks set status='queued',attempts=0,available_at=now(),error='',
-  lease_token=null,lease_until=null,delegation_id=null,updated_at=now()
- where id=any(restarting);
-end $$;
+create or replace trigger reset_studio_pipeline after update of status on public.studio_tasks for each row execute function public.reset_studio_pipeline();
 
 -- A private turn retains ownership between stages; unrelated generations must wait.
 create or replace function public.reserve_studio_generation(workspace uuid,token uuid)
@@ -192,7 +197,7 @@ begin
  returning true into allowed;
  return coalesce(allowed,false);
 end $$;
-create function public.renew_studio_generation(p_workspace uuid,p_token uuid)
+create or replace function public.renew_studio_generation(p_workspace uuid,p_token uuid)
 returns boolean language plpgsql security invoker set search_path=public as $$
 begin
  update public.studio_generation_limits set lease_until=now()+interval '3 minutes'

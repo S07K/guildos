@@ -1,5 +1,5 @@
 -- Explain whether a worker is waiting for another request or the workspace cap.
-create function public.studio_generation_wait_reason(p_workspace uuid)
+create or replace function public.studio_generation_wait_reason(p_workspace uuid)
 returns text language sql security definer set search_path=public as $$
  select case
   when lease_until > now() then 'busy'

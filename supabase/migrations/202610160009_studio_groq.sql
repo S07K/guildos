@@ -1,5 +1,5 @@
 -- Groq is an independent workspace BYOK connection.
-create table public.studio_groq_keys (
+create table if not exists public.studio_groq_keys (
  workspace_id uuid primary key references public.studio_workspaces(id) on delete cascade,
  ciphertext text not null,
  suffix text not null,

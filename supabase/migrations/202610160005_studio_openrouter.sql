@@ -1,6 +1,6 @@
 -- OpenRouter is a separate encrypted workspace connection. Existing OpenAI
 -- credentials are unchanged and never sent to OpenRouter.
-create table public.studio_openrouter_keys (
+create table if not exists public.studio_openrouter_keys (
  workspace_id uuid primary key references public.studio_workspaces(id) on delete cascade,
  ciphertext text not null,
  suffix text not null,

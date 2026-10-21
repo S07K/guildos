@@ -1,5 +1,5 @@
 -- Persist each agent handoff as a tenant-scoped Kanban subtask.
-create table public.studio_task_subtasks (
+create table if not exists public.studio_task_subtasks (
  id uuid primary key default gen_random_uuid(),
  parent_task_id uuid not null,
  project_id uuid not null,
@@ -16,15 +16,16 @@ create table public.studio_task_subtasks (
  foreign key (parent_task_id,project_id,workspace_id)
   references public.studio_tasks(id,project_id,workspace_id) on delete cascade
 );
-create index studio_task_subtasks_project on public.studio_task_subtasks(project_id,created_at desc);
+create index if not exists studio_task_subtasks_project on public.studio_task_subtasks(project_id,created_at desc);
 alter table public.studio_task_subtasks enable row level security;
 revoke all on public.studio_task_subtasks from anon,authenticated;
 grant select on public.studio_task_subtasks to authenticated;
 grant all on public.studio_task_subtasks to service_role;
+drop policy if exists studio_task_subtasks_owner on public.studio_task_subtasks;
 create policy studio_task_subtasks_owner on public.studio_task_subtasks for select to authenticated
  using (workspace_id in (select id from public.studio_workspaces where owner_id=(select auth.uid())));
 
-create function public.set_studio_task_subtask(
+create or replace function public.set_studio_task_subtask(
  p_task uuid,p_token uuid,p_step_key text,p_agent_role text,p_instruction text,
  p_status text,p_summary text default '',p_error text default ''
 ) returns jsonb language plpgsql security invoker set search_path=public as $$
@@ -49,7 +50,7 @@ end $$;
 revoke all on function public.set_studio_task_subtask(uuid,uuid,text,text,text,text,text,text) from public,anon,authenticated;
 grant execute on function public.set_studio_task_subtask(uuid,uuid,text,text,text,text,text,text) to service_role;
 
-create function public.reset_studio_task_subtasks(p_task uuid,p_token uuid)
+create or replace function public.reset_studio_task_subtasks(p_task uuid,p_token uuid)
 returns boolean language plpgsql security invoker set search_path=public as $$
 declare parent public.studio_tasks%rowtype;
 begin
@@ -61,7 +62,7 @@ end $$;
 revoke all on function public.reset_studio_task_subtasks(uuid,uuid) from public,anon,authenticated;
 grant execute on function public.reset_studio_task_subtasks(uuid,uuid) to service_role;
 
-create function public.sync_studio_task_subtasks() returns trigger language plpgsql security invoker set search_path=public as $$
+create or replace function public.sync_studio_task_subtasks() returns trigger language plpgsql security invoker set search_path=public as $$
 begin
  if new.status in ('cancelled','failed','blocked') and old.status is distinct from new.status then
   update public.studio_task_subtasks set status=new.status,error=coalesce(nullif(new.error,''),nullif(new.summary,''),''),updated_at=now()
@@ -69,5 +70,5 @@ begin
  end if;
  return new;
 end $$;
-create trigger studio_task_subtasks_parent_status after update of status on public.studio_tasks
+create or replace trigger studio_task_subtasks_parent_status after update of status on public.studio_tasks
  for each row execute function public.sync_studio_task_subtasks();

@@ -1,22 +1,24 @@
 -- Delegations are real queue jobs. Each child is claimed by its own agent.
-alter table public.studio_tasks add column parent_task_id uuid;
-alter table public.studio_tasks add column depends_on_task_id uuid;
-alter table public.studio_tasks add column delegation_id uuid;
-alter table public.studio_tasks add column task_kind text not null default 'dispatch'
+alter table public.studio_tasks add column if not exists parent_task_id uuid;
+alter table public.studio_tasks add column if not exists depends_on_task_id uuid;
+alter table public.studio_tasks add column if not exists delegation_id uuid;
+alter table public.studio_tasks add column if not exists task_kind text not null default 'dispatch'
  check (task_kind in ('dispatch','work','qa'));
-alter table public.studio_tasks drop constraint studio_tasks_status_check;
+alter table public.studio_tasks drop constraint if exists studio_tasks_status_check;
 alter table public.studio_tasks add constraint studio_tasks_status_check
  check (status in ('queued','running','delegated','review','done','blocked','failed','cancelled'));
+alter table public.studio_tasks drop constraint if exists studio_tasks_parent_scope;
 alter table public.studio_tasks add constraint studio_tasks_parent_scope
  foreign key (parent_task_id,project_id,workspace_id)
  references public.studio_tasks(id,project_id,workspace_id) on delete cascade;
+alter table public.studio_tasks drop constraint if exists studio_tasks_dependency_scope;
 alter table public.studio_tasks add constraint studio_tasks_dependency_scope
  foreign key (depends_on_task_id,project_id,workspace_id)
  references public.studio_tasks(id,project_id,workspace_id) on delete cascade;
-create index studio_tasks_parent on public.studio_tasks(parent_task_id,created_at);
+create index if not exists studio_tasks_parent on public.studio_tasks(parent_task_id,created_at);
 
 -- The dispatcher finishes only after its assignments have been saved together.
-create function public.delegate_studio_task(p_task uuid,p_token uuid,p_assignments jsonb,
+create or replace function public.delegate_studio_task(p_task uuid,p_token uuid,p_assignments jsonb,
  p_summary text,p_model text,p_input integer,p_output integer)
 returns jsonb language plpgsql security invoker set search_path=public as $$
 declare parent public.studio_tasks%rowtype; item jsonb; child public.studio_tasks%rowtype;
@@ -61,7 +63,7 @@ revoke all on function public.delegate_studio_task(uuid,uuid,jsonb,text,text,int
 grant execute on function public.delegate_studio_task(uuid,uuid,jsonb,text,text,integer,integer) to service_role;
 
 -- A child is eligible only after the preceding assignment has finished.
-create function public.claim_studio_task(p_token uuid,p_agent_role text)
+create or replace function public.claim_studio_task(p_token uuid,p_agent_role text)
 returns jsonb language plpgsql security invoker set search_path=public as $$
 declare task public.studio_tasks%rowtype;
 begin
@@ -90,7 +92,7 @@ revoke all on function public.claim_studio_task(uuid,text) from public,anon,auth
 grant execute on function public.claim_studio_task(uuid,text) to service_role;
 
 -- Keep the parent in progress until every child has finished and QA has run.
-create function public.refresh_studio_parent() returns trigger language plpgsql security invoker set search_path=public as $$
+create or replace function public.refresh_studio_parent() returns trigger language plpgsql security invoker set search_path=public as $$
 declare next_status text; current_run uuid;
 begin
  if new.parent_task_id is null or new.status=old.status then return new; end if;
@@ -108,7 +110,7 @@ begin
  where id=new.parent_task_id and status='delegated';
  return new;
 end $$;
-create trigger studio_task_parent_refresh after update of status on public.studio_tasks
+create or replace trigger studio_task_parent_refresh after update of status on public.studio_tasks
  for each row execute function public.refresh_studio_parent();
 
 create or replace function public.control_studio_task(p_task uuid,p_actor uuid,p_action text)
