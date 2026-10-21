@@ -35,3 +35,9 @@ Replace `MIGRATION_VERSION` with that file's numeric prefix. Never mark every fi
 Production jobs are serialized and never automatically cancel an in-progress migration. A queued revision superseded on `main` is rejected before building. Successful migrations remain applied if a later migration or Vercel upload fails; rerunning uses migration history to skip them. Use backward-compatible schema additions so the currently deployed app continues working between migration and release. Roll back application code independently; repair schema changes with a reviewed forward migration.
 
 The workflow follows [Supabase's migration workflow](https://supabase.com/docs/guides/deployment/database-migrations) and [Vercel's GitHub Actions deployment flow](https://vercel.com/kb/guide/how-can-i-use-github-actions-with-vercel).
+
+### Duplicate `studio_tasks_event_scope` during adoption
+
+Migration `202610160004_studio_task_activity.sql` supports replay on databases where its SQL was already applied manually. It reuses the matching unique constraint, preserves the event table and index, and restores the owner policy and grants. It rejects a same-named constraint with a different definition. This is a compatibility correction to the original migration because a later repair migration cannot run past its failure; existing CLI-managed databases do not need to rerun it.
+
+Deploy the updated commit to retry this migration. Its replay regression test covers an existing constraint, retained event data, downstream foreign keys, and tenant isolation. This does not prove that other manually applied migrations match their history: reconcile those individually as described above if the CLI reports another conflict.
