@@ -37,6 +37,25 @@ export function ScrollMotion({ children }: { children: ReactNode }) {
         reveals.set(element, tween);
       });
 
+      root.querySelectorAll<HTMLElement>('[data-stagger]').forEach(container => {
+        const items = container.querySelectorAll<HTMLElement>('[data-stagger-item]');
+        if (!items.length) return;
+        const sequence = gsap.timeline({ scrollTrigger: { trigger: container, start: 'top 82%', once: true } });
+        sequence.fromTo(items,
+          { autoAlpha: 0, y: 24, scale: .985 },
+          { autoAlpha: 1, y: 0, scale: 1, duration: .7, stagger: .14, ease: 'power3.out', clearProps: 'transform,opacity,visibility' },
+        );
+      });
+
+      root.querySelectorAll<HTMLElement>('[data-progress]').forEach(element => {
+        gsap.fromTo(element, { scaleX: 0 }, {
+          scaleX: 1,
+          duration: 1.1,
+          ease: 'power2.out',
+          scrollTrigger: { trigger: element, start: 'top 88%', once: true },
+        });
+      });
+
       root.querySelectorAll<HTMLElement>('[data-parallax]').forEach(element => {
         const distance = () => window.innerWidth <= 640 ? 12 : 26;
         gsap.fromTo(element, { y: () => -distance(), scale: 1.06 }, {

@@ -34,6 +34,8 @@ button, a, input { -webkit-tap-highlight-color: transparent; }
 .site-header nav { display: flex; align-items: center; gap: 24px; font-size: 13px; }
 .process-link { display: inline-flex; align-items: center; min-height: 44px; color: var(--muted); }
 .process-link:hover { color: var(--text); }
+.sign-in-link { display: inline-flex; align-items: center; min-height: 44px; color: var(--text); }
+.sign-in-link:hover { color: var(--accent); }
 .nav-cta { display: inline-flex; align-items: center; gap: 12px; min-height: 38px; padding: 8px 13px; border: 1px solid #dce5df; border-radius: 6px; background: #edf2ef; line-height: 1.2; transition: background .2s, border-color .2s; }
 .nav-cta:hover { background: #e2ebe5; border-color: #c3d3c8; }
 .hero { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 45px 0 62px; }
@@ -93,6 +95,11 @@ h3 { font-size: 17px; line-height: 1.4; font-weight: 500; margin: 0 0 11px; lett
 footer { display: flex; justify-content: space-between; gap: 20px; align-items: center; padding: 25px 0 30px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
 .footer-brand { display: inline-flex; align-items: center; gap: 7px; font-size: 17px; font-weight: 600; color: var(--text); letter-spacing: -.7px; }
 .footer-brand svg { width: 24px; height: 24px; flex: none; }
+.footer-left { display: flex; align-items: center; gap: 24px; }
+.footer-socials { display: flex; align-items: center; gap: 14px; }
+.footer-socials a { color: var(--muted); font-size: 11px; transition: color .18s ease; }
+.footer-socials a:hover { color: #315b46; }
+.footer-socials a:focus-visible { outline: 2px solid #568266; outline-offset: 3px; }
 @media (max-width: 900px) {
   .site-shell { padding: 0 32px; }
   .specialist-row { align-items: start; }
@@ -104,6 +111,7 @@ footer { display: flex; justify-content: space-between; gap: 20px; align-items: 
   .site-header { height: 64px; }
   .brand { font-size: 22px; }
   .process-link { display: none; }
+  .sign-in-link { min-height: 44px; margin-right: 15px; font-size: 12px; }
   .nav-cta { min-height: 44px; padding: 9px 12px; gap: 10px; font-size: 12px; }
   .hero { padding: 32px 0 42px; }
   .hero .eyebrow { margin-bottom: 18px; }
@@ -135,6 +143,7 @@ footer { display: flex; justify-content: space-between; gap: 20px; align-items: 
   .closing-cta { padding: 42px 0; }
   .closing-cta h2 { font-size: 28px; }
   .closing-cta .eyebrow { font-size: 11px; }
+  footer { flex-wrap: wrap; row-gap: 12px; }
   footer > span:nth-child(2) { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
