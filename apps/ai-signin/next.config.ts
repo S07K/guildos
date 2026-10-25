@@ -2,6 +2,9 @@ import type { NextConfig } from 'next';
 
 const config: NextConfig = {
   agentRules: false,
+  experimental: {
+    agentUpgrade: 'security',
+  },
   transpilePackages: ['@guildos/provider-auth'],
   async headers() {
     return [{ source: '/(.*)', headers: [
