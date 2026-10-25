@@ -9,7 +9,7 @@ import { runNextTask } from '../src/lib/studio/agents/worker.ts';
 import { sealKey } from '../src/lib/studio/vault.mjs';
 
 const node={id:'title',type:'text',parentId:'screen',layoutMode:'VERTICAL',primaryAxisSizingMode:'HUG',counterAxisSizingMode:'FILL',padding:0,itemSpacing:0,properties:{name:'Title',text:'Order lunch',color:'text',fontSize:32,fontWeight:600}};
-const screen={id:'screen',parentId:null,type:'container',properties:{name:'Home screen'}};
+const screen={id:'screen',parentId:null,type:'container',properties:{name:'Home screen',screenPreset:'mobile'}};
 const primary={id:'order',parentId:'screen',type:'button',properties:{text:'Order now'}};
 const proposal={mode:'edit',summary:'A first food ordering headline is ready for review.',upsert_nodes:[screen,node,primary],delete_ids:[]};
 test('provider proposals become validated canvas commands and refuse unsafe or inconsistent output',async()=>{

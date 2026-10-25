@@ -9,6 +9,31 @@ export type CanvasNode = { id: string; type: 'button' | 'input' | 'container' | 
 export type CanvasDocument = { kind: 'canvas'; width: number; height: number; background: string; nodes: CanvasNode[] };
 export const isCanvas = (value: unknown): value is CanvasDocument => !!value && typeof value === 'object' && 'kind' in value && value.kind === 'canvas';
 export const blankCanvas = (): CanvasDocument => ({ kind: 'canvas', width: 1100, height: 900, background: '#ffffff', nodes: [] });
+/** Reorder one layer within its own sibling list. Flow children use document order; legacy layers render back-to-front. */
+export function reorderCanvasSiblings(nodes:CanvasNode[],sourceId:string,targetId:string,after=false):CanvasNode[]|null {
+ if(sourceId===targetId)return null;
+ const source=nodes.find(node=>node.id===sourceId),target=nodes.find(node=>node.id===targetId);
+ if(!source||!target||!!source.flow!==!!target.flow)return null;
+ const parentId=(node:CanvasNode)=>node.parentId||(!node.flow?containingFrame(node,nodes)?.id:undefined);
+ const sourceParent=parentId(source);
+ if(sourceParent!==parentId(target))return null;
+ const siblings=source.flow?nodes.filter(node=>node.flow&&node.parentId===sourceParent):[...nodes].reverse().filter(node=>!node.flow&&parentId(node)===sourceParent);
+ const order=siblings.map(node=>node.id),from=order.indexOf(sourceId);
+ if(from<0||!order.includes(targetId))return null;
+ order.splice(from,1);order.splice(order.indexOf(targetId)+(after?1:0),0,sourceId);
+ const rank=new Map(order.map((id,index)=>[id,index]));
+ const reordered=siblings.slice().sort((a,b)=>rank.get(a.id)!-rank.get(b.id)!);
+ let index=0;
+ return nodes.map(node=>rank.has(node.id)?reordered[index++]:node);
+}
+export function adjacentCanvasSiblingId(nodes:CanvasNode[],selectedId:string,key:'ArrowUp'|'ArrowDown'):string|null {
+ const selected=nodes.find(node=>node.id===selectedId);
+ if(!selected)return null;
+ const parentId=(node:CanvasNode)=>node.parentId||(!node.flow?containingFrame(node,nodes)?.id:undefined);
+ const siblings=nodes.filter(node=>!!node.flow===!!selected.flow&&parentId(node)===parentId(selected));
+ const index=siblings.findIndex(node=>node.id===selectedId),next=index+(key==='ArrowUp'?-1:1);
+ return next>=0&&next<siblings.length?siblings[next].id:null;
+}
 export function containingFrame(node: CanvasNode, nodes: CanvasNode[]) {
  if (node.flow) return nodes.find(item=>item.id===node.parentId);
  if (node.type === 'frame') return undefined;
@@ -98,7 +123,7 @@ export function renderCanvas(value: CanvasDocument, title: string, projectId?:st
   const clip = parent ? ` clip-path="url(#clip-${parent.id})"` : '';
   const common = `opacity="${hidden?0:node.opacity}"${hidden?' visibility="hidden"':''} fill="${node.fill}" stroke="${node.stroke}" stroke-width="${node.strokeWidth}"${clip}`;
   if (node.type === 'text') return `<foreignObject x="${node.x}" y="${node.y}" width="${node.width}" height="${node.height}"${hidden?' visibility="hidden"':''}${clip}><div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;width:100%;height:100%;display:flex;align-items:${node.verticalAlign==='middle'?'center':node.verticalAlign==='bottom'?'flex-end':'flex-start'};color:${node.fill};font:${node.fontWeight} ${node.fontSize}px/${node.lineHeight??1.2} sans-serif;letter-spacing:${node.letterSpacing??0}px;text-align:${node.textAlign??'left'};white-space:pre-wrap;overflow-wrap:break-word;overflow:hidden;opacity:${hidden?0:node.opacity}"><span style="width:100%">${escape(node.text)}</span></div></foreignObject>`;
-  if (node.type === 'image') return projectId?`<image x="${node.x}" y="${node.y}" width="${node.width}" height="${node.height}" href="${canvasAssetUrl(projectId,node.assetId!)}" preserveAspectRatio="xMidYMid ${node.imageFit==='contain'?'meet':'slice'}" opacity="${hidden?0:node.opacity}"${hidden?' visibility="hidden"':''}${clip}/>`:'';
+  if (node.type === 'image') return projectId?`<image x="${node.x}" y="${node.y}" width="${node.width}" height="${node.height}" href="${canvasAssetUrl(projectId,node.assetId!)}" preserveAspectRatio="xMidYMid ${node.imageFit==='contain'?'meet':'slice'}" style="border-radius:${node.radius}px" opacity="${hidden?0:node.opacity}"${hidden?' visibility="hidden"':''}${clip}/>`:'';
   if (node.type === 'icon') return `<image x="${node.x}" y="${node.y}" width="${node.width}" height="${node.height}" href="${escape(canvasIconUrl(node.iconName!,node.fill,node.strokeWidth))}" preserveAspectRatio="xMidYMid meet" opacity="${hidden?0:node.opacity}"${hidden?' visibility="hidden"':''}${clip}/>`;
   if (node.type === 'ellipse') return `<ellipse cx="${node.x+node.width/2}" cy="${node.y+node.height/2}" rx="${node.width/2}" ry="${node.height/2}" ${common}/>`;
   if (node.type === 'line') return `<line x1="${node.x}" y1="${node.y}" x2="${node.x+node.width}" y2="${node.y+node.height}" ${common}/>`;

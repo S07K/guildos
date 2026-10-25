@@ -1,13 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { blankCanvas, renderCanvas } from '../src/lib/studio/canvas.ts';
+import { renderAutoLayoutHtml } from '../src/lib/studio/canvas-layout.ts';
 import { applyCanvasCommands } from '../src/lib/studio/canvas-commands.ts';
 import { componentToCanvas, canvasToComponent, componentProposalSchema, sanitizeComponentNode } from '../src/lib/studio/design-system.ts';
 import { canvasQualityIssues, contrastRatio } from '../src/lib/studio/canvas-quality.ts';
 import {initialPipeline,rejectOrApprove} from '../src/lib/studio/agents/pipeline.ts';
 import { validateProposal, auditPipeline } from '../src/lib/studio/agents/proposal.ts';
 
-const node=(id,type='container',parentId=null,properties={})=>({id,parentId,type,properties});
+const node=(id,type='container',parentId=null,properties={})=>({id,parentId,type,properties:{...(id==='screen'&&type==='container'&&parentId===null?{screenPreset:'mobile'}:{}),...properties}});
 const proposal=nodes=>({mode:'edit',summary:'Updated components.',upsert_nodes:nodes,delete_ids:[]});
 test('sanitizer fills missing layout, rounds 8px tokens, and preserves the component contract on roundtrip',()=>{
  const raw={...node('screen'),padding:19,itemSpacing:12,properties:{borderRadius:11,backgroundColor:'surface-muted'}};
@@ -22,6 +23,20 @@ test('sanitizer fills missing layout, rounds 8px tokens, and preserves the compo
  assert.throws(()=>sanitizeComponentNode({...raw,properties:{backgroundColor:'url(secret)'}}),/HEX color/);
  assert.throws(()=>validateProposal(proposal(Array.from({length:7},(_,i)=>node(`node-${i}`))),blankCanvas()),/Too big/);
  assert.equal(componentProposalSchema.additionalProperties,false);
+});
+
+test('image and container radius defaults persist through component conversion and image rendering',()=>{
+ const image={id:'photo',parentId:'screen',type:'image',properties:{imageUrl:'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?ixid=test',name:'Landscape'}};
+ const imageNode=componentToCanvas(image);
+ const containerNode=componentToCanvas(node('screen'));
+ assert.equal(imageNode.radius,8);
+ assert.equal(containerNode.radius,8);
+ assert.equal(canvasToComponent(imageNode).properties.borderRadius,8);
+ assert.equal(componentToCanvas({...image,properties:{...image.properties,borderRadius:24}}).radius,24);
+ const html=renderAutoLayoutHtml({...blankCanvas(),nodes:[componentToCanvas(node('screen')),imageNode]},'Preview');
+ assert.match(html,/overflow:hidden/);
+ assert.match(html,/border-radius:8px/);
+ assert.match(html,/height:100%;min-width:0;object-fit:cover/);
 });
 
 test('buttons and inputs render with component styles and accessible native preview controls',()=>{

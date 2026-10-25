@@ -4,7 +4,7 @@ import { blankCanvas } from '../src/lib/studio/canvas.ts';
 import { componentToCanvas, canvasToComponent } from '../src/lib/studio/design-system.ts';
 import { initialPipeline, advanceDraft, validateStageEdit, rejectOrApprove, pipelineIssues } from '../src/lib/studio/agents/pipeline.ts';
 import { validateProposal, proposeCanvasWork } from '../src/lib/studio/agents/proposal.ts';
-const node=(id,type,parentId=null,properties={})=>({id,type,parentId,layoutMode:'VERTICAL',primaryAxisSizingMode:'HUG',counterAxisSizingMode:'FILL',padding:0,itemSpacing:8,properties});
+const node=(id,type,parentId=null,properties={})=>({id,type,parentId,layoutMode:'VERTICAL',primaryAxisSizingMode:'HUG',counterAxisSizingMode:'FILL',padding:0,itemSpacing:8,properties:{...(id==='screen'&&type==='container'&&parentId===null?{screenPreset:'mobile'}:{}),...properties}});
 const document=()=>({...blankCanvas(),nodes:[componentToCanvas(node('screen','container')),componentToCanvas(node('title','text','screen',{text:'Welcome'})),componentToCanvas(node('cta','button','screen',{text:'Continue'}))]});
 const state=(stage=0)=>({...initialPipeline(document(),'Active screen ID: screen\nBuild this screen',null),stage});
 test('stage permissions enforce structure, surface-only direction, text-only copy and read-only QA',()=>{

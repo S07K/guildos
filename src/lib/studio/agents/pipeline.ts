@@ -3,7 +3,7 @@ import type { CanvasDocument, CanvasNode } from '../canvas.ts';
 import type { CanvasCommand } from '../canvas-commands.ts';
 import type { AgentRole } from '../agent-roles.ts';
 import { activeScreenId, screenDocument, validateScreenEdits } from '../screen-scope.ts';
-import { screenCompositionIssues } from '../canvas-quality.ts';
+import { componentQualityIssues, screenCompositionIssues } from '../canvas-quality.ts';
 
 export class PipelineGateError extends Error {}
 
@@ -52,7 +52,7 @@ export function validateStageEdit(state:PipelineState,after:CanvasDocument) {
 }
 export function pipelineIssues(state:PipelineState):PipelineIssue[] {
  const scoped=screenDocument(state.document,state.targetScreenId);
- const issues=[...screenCompositionIssues(scoped)];
+ const issues=[...screenCompositionIssues(scoped),...componentQualityIssues(scoped)];
  for(const node of scoped.nodes){
   if(!node.flow||!['container','text','image','icon','button','input'].includes(node.type))issues.push({key:`component:${node.id}`,message:`“${node.name}” must use the component flex contract before publication.`});
   if(node.type==='container'&&!['row','column'].includes(node.layout?.direction||''))issues.push({key:`layout:${node.id}`,message:`“${node.name}” requires an explicit horizontal or vertical flex direction.`});
@@ -65,10 +65,10 @@ export function advanceDraft(state:PipelineState,result:{document:CanvasDocument
  if(!result.stageComplete&&state.action>=14)throw new PipelineGateError('This stage exceeded fifteen actions. The private draft was not published.');
  return {...state,document:result.document,commands:[...state.commands,...result.commands],stage:state.stage+(result.stageComplete?1:0),action:result.stageComplete?0:state.action+1};
 }
-export function rejectOrApprove(state:PipelineState,_reported:PipelineIssue[]):PipelineState {
+export function rejectOrApprove(state:PipelineState,reported:PipelineIssue[]):PipelineState {
  if(state.stage!==4)throw new Error('Only the final QA stage can approve a turn.');
- // QA observations are advisory; deterministic composition requirements remain enforced.
- const issues=pipelineIssues(state);
+ // Model findings and deterministic checks both need a responsible correction stage.
+ const issues=[...pipelineIssues(state),...reported.filter(issue=>pipelineRoles.slice(0,4).includes(issue.agent_role)&&typeof issue.message==='string'&&!!issue.message.trim())];
  if(!issues.length)return {...state,stage:5,issues:[]};
  if(state.round>=3)throw new PipelineGateError(`Structural screen requirements remained incomplete after three correction rounds. No canvas changes were published.\n${issues.map(issue=>issue.message).join('\n')}`);
  const stage=Math.min(...issues.map(issue=>Math.max(0,pipelineRoles.indexOf(issue.agent_role as typeof pipelineRoles[number]))));

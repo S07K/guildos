@@ -37,9 +37,6 @@ function normalizeNodeProperties(value: unknown): unknown {
   properties[key]=value;
  }
  const normalized={...node,properties} as Record<string,unknown>;
- // Minor spacing drift is normalized before strict schema validation.
- for(const key of ['padding','itemSpacing']) if(typeof normalized[key]==='number'&&Number.isFinite(normalized[key])&&(normalized[key] as number)>=0&&(normalized[key] as number)<=496)normalized[key]=snapToGrid(normalized[key] as number);
- if(typeof properties.borderRadius==='number'&&Number.isFinite(properties.borderRadius)&&properties.borderRadius>=0&&properties.borderRadius<=1000)properties.borderRadius=snapToGrid(properties.borderRadius,1000);
  // Icons always render at a catalog size, so normalize their declared sizing modes.
  if(node.type==='icon'){normalized.primaryAxisSizingMode='FIXED';normalized.counterAxisSizingMode='FIXED';}
  return normalized;
@@ -119,7 +116,7 @@ export function sanitizeComponentNode(value:unknown):ComponentNode {
  if(node.properties.iconName){const name=normalizeUiIconName(node.properties.iconName);if(!name)throw new Error('Choose iconName from the Lucide catalog.');node.properties.iconName=name;}
  if(node.type==='icon'&&!node.properties.iconName)throw new Error('Icon layers require a valid Lucide catalog iconName.');
  if(node.properties.imageUrl&&!isUnsplashImageUrl(node.properties.imageUrl))throw new Error('Images require a valid Unsplash CDN URL.');
- return {...node,padding:snapToGrid(node.padding),itemSpacing:snapToGrid(node.itemSpacing),properties:{...node.properties,borderRadius:snapToGrid(node.properties.borderRadius??(['button','input'].includes(node.type)?8:0),1000)}};
+ return {...node,padding:snapToGrid(node.padding),itemSpacing:snapToGrid(node.itemSpacing),properties:{...node.properties,borderRadius:snapToGrid(node.properties.borderRadius??(['button','input','image','container'].includes(node.type)?8:0),1000)}};
 }
 const size=(mode:'FIXED'|'HUG'|'FILL')=>mode==='FIXED'?'fixed':mode==='FILL'?'fill-container':'hug-contents';
 /** The model never supplies geometry. Fixed dimensions come from this component catalog. */

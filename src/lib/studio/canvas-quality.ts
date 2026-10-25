@@ -134,7 +134,7 @@ export function sanitizeCanvasLayout(document:CanvasDocument):CanvasDocument {
   if(node.contentPadding!==undefined)node.contentPadding=Math.min(496,Math.round(node.contentPadding/8)*8);
  }
  const root=nodes.find(node=>node.screen&&!node.parentId);
- if(root){root.width=375;root.height=Math.max(812,root.height);root.sizing={...root.sizing,width:'fixed'};}
+ if(root){root.width=375;root.height=Math.max(812,root.height);root.sizing={...root.sizing,width:'fixed',height:root.sizing?.height??'hug-contents'};}
  return {...document,nodes};
 }
 
