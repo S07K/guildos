@@ -91,14 +91,15 @@ export function validateCanvas(value: unknown): CanvasDocument {
 const escape = (value: string) => value.replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]!));
 export function renderCanvas(value: CanvasDocument, title: string, projectId?:string) {
  const doc = validateCanvas(value);
- const frames = doc.nodes.filter(node => node.type === 'frame' && !node.hidden && !node.flow);
- const svg = [...frames, ...doc.nodes.filter(node => !node.hidden && !node.flow && node.type !== 'frame')].map(node => {
-  const parent = containingFrame(node, frames);
+ const frames = doc.nodes.filter(node => node.type === 'frame' && !node.flow);
+ const svg = [...frames, ...doc.nodes.filter(node => !node.flow && node.type !== 'frame')].map(node => {
+  const parent = frames.find(frame=>frame.id===node.parentId)||containingFrame(node, frames);
+  const hidden=node.hidden||parent?.hidden;
   const clip = parent ? ` clip-path="url(#clip-${parent.id})"` : '';
-  const common = `opacity="${node.opacity}" fill="${node.fill}" stroke="${node.stroke}" stroke-width="${node.strokeWidth}"${clip}`;
-  if (node.type === 'text') return `<foreignObject x="${node.x}" y="${node.y}" width="${node.width}" height="${node.height}"${clip}><div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;width:100%;height:100%;display:flex;align-items:${node.verticalAlign==='middle'?'center':node.verticalAlign==='bottom'?'flex-end':'flex-start'};color:${node.fill};font:${node.fontWeight} ${node.fontSize}px/${node.lineHeight??1.2} sans-serif;letter-spacing:${node.letterSpacing??0}px;text-align:${node.textAlign??'left'};white-space:pre-wrap;overflow-wrap:break-word;overflow:hidden;opacity:${node.opacity}"><span style="width:100%">${escape(node.text)}</span></div></foreignObject>`;
-  if (node.type === 'image') return projectId?`<image x="${node.x}" y="${node.y}" width="${node.width}" height="${node.height}" href="${canvasAssetUrl(projectId,node.assetId!)}" preserveAspectRatio="xMidYMid ${node.imageFit==='contain'?'meet':'slice'}" opacity="${node.opacity}"${clip}/>`:'';
-  if (node.type === 'icon') return `<image x="${node.x}" y="${node.y}" width="${node.width}" height="${node.height}" href="${escape(canvasIconUrl(node.iconName!,node.fill,node.strokeWidth))}" preserveAspectRatio="xMidYMid meet" opacity="${node.opacity}"${clip}/>`;
+  const common = `opacity="${hidden?0:node.opacity}"${hidden?' visibility="hidden"':''} fill="${node.fill}" stroke="${node.stroke}" stroke-width="${node.strokeWidth}"${clip}`;
+  if (node.type === 'text') return `<foreignObject x="${node.x}" y="${node.y}" width="${node.width}" height="${node.height}"${hidden?' visibility="hidden"':''}${clip}><div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;width:100%;height:100%;display:flex;align-items:${node.verticalAlign==='middle'?'center':node.verticalAlign==='bottom'?'flex-end':'flex-start'};color:${node.fill};font:${node.fontWeight} ${node.fontSize}px/${node.lineHeight??1.2} sans-serif;letter-spacing:${node.letterSpacing??0}px;text-align:${node.textAlign??'left'};white-space:pre-wrap;overflow-wrap:break-word;overflow:hidden;opacity:${hidden?0:node.opacity}"><span style="width:100%">${escape(node.text)}</span></div></foreignObject>`;
+  if (node.type === 'image') return projectId?`<image x="${node.x}" y="${node.y}" width="${node.width}" height="${node.height}" href="${canvasAssetUrl(projectId,node.assetId!)}" preserveAspectRatio="xMidYMid ${node.imageFit==='contain'?'meet':'slice'}" opacity="${hidden?0:node.opacity}"${hidden?' visibility="hidden"':''}${clip}/>`:'';
+  if (node.type === 'icon') return `<image x="${node.x}" y="${node.y}" width="${node.width}" height="${node.height}" href="${escape(canvasIconUrl(node.iconName!,node.fill,node.strokeWidth))}" preserveAspectRatio="xMidYMid meet" opacity="${hidden?0:node.opacity}"${hidden?' visibility="hidden"':''}${clip}/>`;
   if (node.type === 'ellipse') return `<ellipse cx="${node.x+node.width/2}" cy="${node.y+node.height/2}" rx="${node.width/2}" ry="${node.height/2}" ${common}/>`;
   if (node.type === 'line') return `<line x1="${node.x}" y1="${node.y}" x2="${node.x+node.width}" y2="${node.y+node.height}" ${common}/>`;
   if (node.type === 'path') return `<polyline points="${(node.points || []).map((point,i) => point + (i%2 ? node.y : node.x)).join(' ')}" fill="none" stroke="${node.stroke}" stroke-width="${node.strokeWidth}" opacity="${node.opacity}"/>`;

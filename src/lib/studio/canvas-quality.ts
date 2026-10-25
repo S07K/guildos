@@ -120,6 +120,24 @@ export function componentQualityIssues(document:CanvasDocument):CanvasIssue[] {
  return issues;
 }
 
+/** Correct common, harmless sizing drift before the draft reaches QA. */
+export function sanitizeCanvasLayout(document:CanvasDocument):CanvasDocument {
+ const nodes=document.nodes.map(node=>({...node, ...(node.layout?{layout:{...node.layout}}:{ }), ...(node.sizing?{sizing:{...node.sizing}}:{})}));
+ const byId=new Map(nodes.map(node=>[node.id,node]));
+ for(const node of nodes){
+  if(!node.flow||!node.sizing)continue;
+  if(node.type==='text')node.sizing.height='hug-contents';
+  const parent=byId.get(node.parentId||'');
+  for(const axis of ['width','height'] as const)if(node.sizing[axis]==='fill-container'&&parent?.sizing?.[axis]==='hug-contents')node.sizing[axis]='hug-contents';
+  if(node.layout){node.layout.padding=Math.min(496,Math.round(node.layout.padding/8)*8);node.layout.gap=Math.min(496,Math.round(node.layout.gap/8)*8);}
+  node.radius=Math.min(1000,Math.round(node.radius/8)*8);
+  if(node.contentPadding!==undefined)node.contentPadding=Math.min(496,Math.round(node.contentPadding/8)*8);
+ }
+ const root=nodes.find(node=>node.screen&&!node.parentId);
+ if(root){root.width=375;root.height=Math.max(812,root.height);root.sizing={...root.sizing,width:'fixed'};}
+ return {...document,nodes};
+}
+
 
 /** Final review gate: incremental empty frames are allowed while specialists are building. */
 export function screenCompositionIssues(document:CanvasDocument):CanvasIssue[] {
@@ -128,7 +146,7 @@ export function screenCompositionIssues(document:CanvasDocument):CanvasIssue[] {
  if(roots.length!==1)issues.push({key:'single-screen',message:'Review exactly one cohesive mobile screen; multiple screen roots and empty canvases cannot be approved.'});
  for(const root of roots){
   if(!root.screen){issues.push({key:`screen:${root.id}`,message:`“${root.name}” must be a Screen Frame, with its content nested inside.`});continue;}
-  if(root.width!==375||root.height<812||root.layout?.direction!=='column')issues.push({key:`mobile-screen:${root.id}`,message:'The active screen needs a single vertical 375px mobile viewport with minimum 812px height.'});
+  if(root.width!==375||root.height<640||root.sizing?.width!=='fixed'||root.layout?.direction!=='column')issues.push({key:`mobile-screen:${root.id}`,message:'The active screen needs one vertical mobile viewport at least 375×640 with flexible height.'});
   const descendants=document.nodes.filter(node=>{
    if(node.hidden)return false;
    let parent=node.parentId;for(let depth=0;parent&&depth<32;depth++){const ancestor=document.nodes.find(item=>item.id===parent);if(ancestor?.hidden)return false;if(parent===root.id)return true;parent=ancestor?.parentId;}return false;

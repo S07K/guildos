@@ -43,6 +43,7 @@ export function applyCanvasCommands(document: CanvasDocument, commands: unknown)
      const updated=componentToCanvas({...previous,...command.patch,properties:{...previous.properties,...(command.patch.properties as object||{})}});
      if(updated.imageUrl===node.imageUrl&&node.imageSource)updated.imageSource=node.imageSource;
      if(!updated.screen)delete node.screen;
+     if(updated.type==='text'||updated.type==='icon')delete node.backgroundColor;
      if(!updated.imageUrl){delete node.imageUrl;delete node.imageSource;}
      if(!updated.assetId)delete node.assetId;
      if(!updated.iconName)delete node.iconName;

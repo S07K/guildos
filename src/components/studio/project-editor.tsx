@@ -18,6 +18,7 @@ import { Layers as LayersOutlined } from 'lucide-react';
 import { FileText as ArticleOutlined } from 'lucide-react';
 import { History as HistoryOutlined } from 'lucide-react';
 import { ChevronDown as ExpandMoreOutlined } from 'lucide-react';
+import { ChevronRight as ChevronRightOutlined } from 'lucide-react';
 import { renderDesign } from '@/lib/studio/design.mjs';
 import { blankCanvas, CANVAS_WORKSPACE_MARGIN, CANVAS_WORKSPACE_SIZE, canvasIconUrl, containingFrame, isCanvas, renderCanvas, type CanvasDocument, type CanvasNode } from '@/lib/studio/canvas';
 import { AutoLayoutProperties } from './auto-layout-properties';
@@ -143,6 +144,7 @@ export function ProjectEditor({ project, initialVersions, initialVersionId, conn
     const [iconLoading,setIconLoading] = useState(false);
     const [uploadingImage,setUploadingImage] = useState(false);
     const [showLayoutIssues,setShowLayoutIssues] = useState(false);
+    const [collapsedLayerIds,setCollapsedLayerIds] = useState<Set<string>>(()=>new Set());
     const [framePreset, setFramePreset] = useState('custom');
     const framePresets = [{id:'custom',label:'Custom',width:0,height:0},{id:'phone',label:'Phone · 393 × 852',width:393,height:852},{id:'phone-large',label:'Phone large · 440 × 956',width:440,height:956},{id:'tablet',label:'Tablet · 820 × 1180',width:820,height:1180},{id:'tablet-large',label:'Tablet large · 1024 × 1366',width:1024,height:1366},{id:'laptop',label:'Laptop · 1280 × 832',width:1280,height:832},{id:'desktop',label:'Desktop · 1440 × 1024',width:1440,height:1024}];
     const selectedFramePreset = framePresets.find(item=>item.id===framePreset);
@@ -468,7 +470,17 @@ export function ProjectEditor({ project, initialVersions, initialVersionId, conn
     }
     const topLevelCanvasNodes = orderedCanvasNodes.filter(node => !canvasChildIds.has(node.id));
     const renderCanvasLayerRow = (node: CanvasNode, nested = false) => <ListItemButton key={node.id} draggable onDragStart={event=>{draggedNodeId.current=node.id;setLayerDragPreview(event,node.name);event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',node.id);}} onDragOver={event=>{event.preventDefault();setDragOverNodeId(node.id);}} onDragLeave={()=>setDragOverNodeId(current=>current===node.id?null:current)} onDrop={event=>{event.preventDefault();const source=draggedNodeId.current||event.dataTransfer.getData('text/plain');reorderCanvasNode(source,node.id);draggedNodeId.current=null;setDragOverNodeId(null);}} onDragEnd={()=>{draggedNodeId.current=null;setDragOverNodeId(null);}} selected={nodeId===node.id} onClick={()=>{setNodeId(node.id);setTool('select');setRightMode('properties');}} sx={{borderRadius:1,py:.75,pl:nested?3:1.5,cursor:'grab',borderTop:dragOverNodeId===node.id?'2px solid #557c63':'2px solid transparent','&.Mui-selected':{bgcolor:'#e9f1eb',color:'#386650'},'&:active':{cursor:'grabbing'}}}><ListItemIcon sx={{minWidth:24,color:'text.disabled'}}><DragIndicatorOutlined size={15}/></ListItemIcon><ListItemIcon sx={{minWidth:24,color:'inherit'}}>{node.type==='text'?<TextFieldsOutlined size={17}/>:node.type==='icon'?<ShapesOutlined size={16}/>:node.type==='image'?<ImagePlusOutlined size={16}/>:node.type==='ellipse'?<CircleOutlined size={16}/>:node.type==='container'?<LayersOutlined size={16}/>:node.type==='frame'?<CropFreeOutlined size={16}/>:<RectangleOutlined size={16}/>}</ListItemIcon>{editingNodeName===node.id?<TextField autoFocus variant="standard" size="small" value={nodeNameDraft} slotProps={{htmlInput:{'aria-label':'Layer name',maxLength:100}}} onClick={event=>event.stopPropagation()} onChange={event=>setNodeNameDraft(event.target.value)} onBlur={()=>{if(cancelNodeRename.current){cancelNodeRename.current=false;return;}renameNode(node.id,nodeNameDraft);}} onKeyDown={event=>{event.stopPropagation();if(event.key==='Enter'){event.preventDefault();event.currentTarget.blur();}if(event.key==='Escape'){cancelNodeRename.current=true;setEditingNodeName(null);}}} sx={{flex:1,minWidth:0,'& .MuiInputBase-input':{fontSize:12,py:.25}}}/>:<ListItemText primary={<span onDoubleClick={event=>{event.stopPropagation();setNodeNameDraft(node.name);setEditingNodeName(node.id);}} title="Double-click to rename">{node.name}</span>} slotProps={{primary:{sx:{fontSize:12,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}}}/>}<IconButton size="small" aria-label={'Toggle visibility '+node.name} onClick={event=>{event.stopPropagation();if(!isCanvas(draft))return;commitCanvas();setDraft({...draft,nodes:draft.nodes.map(item=>item.id===node.id?{...item,hidden:!item.hidden}:item)});}}>{node.hidden?<VisibilityOffOutlined size={14}/>:<VisibilityOutlined size={14}/>}</IconButton></ListItemButton>;
-    const renderFlowLayerTree = (node:CanvasNode):React.ReactNode => <Box key={node.id}>{renderCanvasLayerRow(node)}<Box sx={{ml:1.25,borderLeft:'1px solid #e2e8e3'}}>{(canvasChildren.get(node.id)||[]).map(child=>renderFlowLayerTree(child))}</Box></Box>;
+    const renderFlowLayerTree = (node:CanvasNode,nested=false):React.ReactNode => {
+        const children=canvasChildren.get(node.id)||[];
+        const collapsed=collapsedLayerIds.has(node.id);
+        return <Box component="li" key={node.id} sx={{listStyle:'none'}}>
+            <Box sx={{display:'flex',alignItems:'center'}}>
+                {children.length?<IconButton size="small" aria-label={`${collapsed?'Expand':'Collapse'} ${node.name}`} aria-expanded={!collapsed} onClick={()=>setCollapsedLayerIds(current=>{const next=new Set(current);if(next.has(node.id))next.delete(node.id);else next.add(node.id);return next;})} sx={{width:25,height:32,flex:'none',color:'text.secondary'}}>{collapsed?<ChevronRightOutlined size={15}/>:<ExpandMoreOutlined size={15}/>}</IconButton>:<Box sx={{width:25,flex:'none'}}/>}
+                <Box sx={{flex:1,minWidth:0}}>{renderCanvasLayerRow(node,nested)}</Box>
+            </Box>
+            {children.length>0&&!collapsed&&<Box sx={{ml:1.5,borderLeft:'1px solid #e2e8e3'}}><List disablePadding>{children.map(child=>child.flow?renderFlowLayerTree(child,true):renderCanvasLayerRow(child,true))}</List></Box>}
+        </Box>;
+    };
     const reorderDesignSection = (sourceId:string,targetId:string) => {
         if(!draft||isCanvas(draft)||sourceId===targetId)return;
         const order=[...designSectionOrder],from=order.indexOf(sourceId as typeof order[number]),to=order.indexOf(targetId as typeof order[number]);

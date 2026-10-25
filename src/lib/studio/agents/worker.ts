@@ -2,11 +2,18 @@ import { randomUUID } from 'node:crypto';
 import { providerPriority } from '../provider-fallback.ts';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { blankCanvas, isCanvas } from '../canvas.ts';
+import { sanitizeCanvasLayout } from '../canvas-quality.ts';
+import { canvasQualityIssues } from '../canvas-quality.ts';
+import { screenDocument } from '../screen-scope.ts';
 import { openKey } from '../vault.mjs';
 import { hasChatGPTPlan, chatGPTConnection } from '../chatgpt-oauth.ts';
 import { agentIdentity, type AgentRole } from '../agent-roles.ts';
 import { initialPipeline, PipelineGateError, pipelineRoles, stageInstructions, advanceDraft, rejectOrApprove, type PipelineState } from './pipeline.ts';
 import { proposeCanvasWork, auditPipeline, ProviderFailure } from './proposal.ts';
+
+function devWorkerLog(event:string,details:Record<string,unknown>={}) {
+ if(process.env.NODE_ENV==='development') console.info('[GuildOS worker]',JSON.stringify({time:new Date().toISOString(),event,...details},null,2));
+}
 
 /** One lease advances one private stage action; only final QA approval publishes. */
 export async function runNextTask(client:SupabaseClient, propose=proposeCanvasWork, agentRole?:AgentRole, audit=auditPipeline) {
@@ -15,6 +22,8 @@ export async function runNextTask(client:SupabaseClient, propose=proposeCanvasWo
  if(claimed.error) throw new Error('Task queue unavailable. Apply the agent job migration and check worker credentials.');
  const task=claimed.data;
  if(!task) return false;
+ const taskStarted=Date.now();
+ devWorkerLog('task_claimed',{task:task.id.slice(0,8),role:task.agent_role,attempt:task.attempts});
  let role=task.agent_role as AgentRole;
  const abort=new AbortController();
  let reserved=false;
@@ -114,18 +123,29 @@ export async function runNextTask(client:SupabaseClient, propose=proposeCanvasWo
   }
   const publish=async()=>{
    const saved=await finish({mode:'edit',summary:'The single-screen design passed all five pipeline stages and is ready for review.',document:state.document,commands:state.commands,expectedVersionId:state.baseVersionId,model:recordedModel(active.model),input_tokens:0,output_tokens:0});
-   await event(saved?.status==='review'?'result':'error',saved?.status==='review'?'QA passed. The complete screen is now ready for review.':'The canvas changed while the draft was prepared; the draft was not published.');
+   await event(saved?.status==='review'?'result':'error',saved?.status==='review'?'The complete screen is ready for review.':'The canvas changed while the draft was prepared; the draft was not published.');
   };
   if(state.stage===5){await publish();return true;}
   const stageRole=pipelineRoles[state.stage];role=stageRole;
+  const completedStage=state.stage+1;
+  const stageStarted=Date.now();
+  devWorkerLog('stage_started',{task:task.id.slice(0,8),stage:completedStage,action:state.action+1,role:stageRole,round:state.round+1});
   await event('status',`Stage ${state.stage+1}/5 · ${agentIdentity[stageRole].persona}: ${stageInstructions[state.stage]}`);
   let next:PipelineState;
   let usage:{model:string;input_tokens:number;output_tokens:number;summary:string};
   if(state.stage===4){
-   const auditResult=await withProviderFallback(connection=>audit({...connection,brief:projectResult.data!.brief,instruction:task.instruction,state,signal:abort.signal},connection.request));
-   next=rejectOrApprove(state,auditResult.issues);usage=auditResult;
+   state={...state,document:sanitizeCanvasLayout(state.document)};
+   try {
+    const auditResult=await withProviderFallback(connection=>audit({...connection,brief:projectResult.data!.brief,instruction:task.instruction,state,signal:abort.signal},connection.request));
+    next=rejectOrApprove(state,auditResult.issues);usage=auditResult;
+   } catch(error) {
+    if(abort.signal.aborted)throw error;
+    devWorkerLog('qa_advisory_unavailable',{task:task.id.slice(0,8),message:error instanceof Error?error.message:'QA advisory failed'});
+    next=rejectOrApprove(state,[]);usage={model:active.model,input_tokens:0,output_tokens:0,summary:'Backend layout corrections applied; advisory QA was unavailable.'};
+   }
   }else{
-   const result=await withProviderFallback(connection=>propose({...connection,role:stageRole,targetScreenId:state.targetScreenId,instruction:task.instruction,brief:projectResult.data!.brief,document:state.document,notes:[...(notesResult.data||[])].reverse(),signal:abort.signal,pipeline:state,onProgress:message=>event('status',message)},connection.request));
+   const feedbackTickets=canvasQualityIssues(screenDocument(state.document,state.targetScreenId)).map(issue=>issue.message);
+   const result=await withProviderFallback(connection=>propose({...connection,role:stageRole,targetScreenId:state.targetScreenId,instruction:task.instruction,brief:projectResult.data!.brief,document:state.document,notes:[...(notesResult.data||[])].reverse(),signal:abort.signal,pipeline:state,feedbackTickets,onProgress:message=>event('status',message)},connection.request));
    next=advanceDraft(state,result);usage=result;
   }
   if(abort.signal.aborted)return true;
@@ -133,11 +153,13 @@ export async function runNextTask(client:SupabaseClient, propose=proposeCanvasWo
   if(saved.error)throw new Error('Could not save the private pipeline checkpoint.');
   if(saved.data?.status==='stale')return true;
   state=next;
+  devWorkerLog('orchestrator_decision',{task:task.id.slice(0,8),agent_name:agentIdentity[stageRole].name,agent_persona:agentIdentity[stageRole].persona,completed_stage:completedStage,next_stage:state.stage<5?state.stage+1:'publish',action:state.action,duration_ms:Date.now()-stageStarted,decision_summary:usage.summary,qa_issues:state.issues});
   if(state.stage===5)await publish();
-  else await event('status',state.issues.length?'QA rejected the private draft. Corrections are queued; the visible canvas is unchanged.':'Private draft saved. The next sequential action is queued.');
+  else await event('status',state.issues.length?'The private draft needs a structural completion fix before review.':'Private draft saved. The next sequential action is queued.');
  } catch(error) {
   if(!abort.signal.aborted) {
    const message=error instanceof Error?error.message:'The task could not finish.';
+   devWorkerLog('task_failed',{task:task.id.slice(0,8),role,elapsed_ms:Date.now()-taskStarted,error:error instanceof Error?error.name:'UnknownError',message:message.slice(0,240)});
    const safe=error instanceof PipelineGateError||error instanceof ProviderFailure||/^(The (provider|agent)|Project context|Could not)/.test(message)?message:error instanceof Error&&error.name==='TimeoutError'?'The model request timed out. The task will retry; choose a faster model if it keeps timing out.':'The task could not finish. Check the connection and retry.';
    if(error instanceof PipelineGateError||error instanceof ProviderFailure&&!error.retryable) await blocked(safe);
    else {

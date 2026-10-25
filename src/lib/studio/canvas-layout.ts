@@ -24,7 +24,7 @@ export function normalizeFlowFields(raw:Record<string,unknown>,previous?:CanvasN
  if(node.parentId===null)delete node.parentId;
  return node;
 }
-export const flowChildren=(doc:CanvasDocument,id?:string)=>doc.nodes.filter(node=>node.flow&&!node.hidden&&(node.parentId||undefined)===id);
+export const flowChildren=(doc:CanvasDocument,id?:string)=>doc.nodes.filter(node=>node.flow&&(node.parentId||undefined)===id);
 const alignment=(value:string)=>value==='start'?'flex-start':value==='end'?'flex-end':value;
 export const inlineIconSize=(node:CanvasNode)=>node.fontSize>16?20:16;
 export const iconWrapperStyle=(node:CanvasNode):CSSProperties=>({display:'inline-flex',width:inlineIconSize(node),height:inlineIconSize(node),minWidth:inlineIconSize(node),minHeight:inlineIconSize(node),alignItems:'center',justifyContent:'center',flexShrink:0,verticalAlign:'middle'});
@@ -38,15 +38,15 @@ export function flowNodeStyle(node:CanvasNode,parent?:CanvasNode,atomic:{iconRow
  const fixedWidth=node.sizing?.width==='fixed',fixedHeight=node.sizing?.height==='fixed';
  return {
   boxSizing:'border-box',position:'relative',padding:node.contentPadding,minWidth:0,maxWidth:'100%',flexShrink:0,
-  width:node.screen?node.width:fixedWidth?node.width:fillWidth?(row?undefined:'100%'):['rectangle','ellipse'].includes(node.type)?24:'fit-content',height:fixedHeight&&!isLayoutContainer(node.type)&&node.type!=='image'?node.height:'auto',
+  width:node.screen?node.width:fixedWidth?node.width:fillWidth?(row?undefined:'100%'):['rectangle','ellipse'].includes(node.type)?24:'fit-content',height:node.screen&&node.sizing?.height==='fixed'?node.height:fixedHeight&&!isLayoutContainer(node.type)&&node.type!=='image'?node.height:'auto',
   flexGrow:row?(fillWidth?1:0):(fillHeight?1:0),flexBasis:row&&fillWidth?0:undefined,
   alignSelf:(!row&&fillWidth)||(row&&fillHeight)?'stretch':undefined,
   minHeight:node.screen?node.height:fixedHeight?node.height:['button','input'].includes(node.type)?48:node.type==='icon'?24:node.type==='image'?120:node.type==='rectangle'||node.type==='ellipse'?24:undefined,
   ...(layout?{display:'flex',flexDirection:layout.direction,flexWrap:layout.direction==='row'?'wrap':'nowrap',gap:layout.gap,padding:layout.padding,alignItems:alignment(layout.alignItems),justifyContent:alignment(layout.justifyContent)}:{}),
   ...(['button','input'].includes(node.type)&&node.iconName?{display:'flex',flexDirection:'row',flexWrap:'nowrap',gap:8,alignItems:'center',justifyContent:node.type==='button'?'center':alignment(layout?.justifyContent||'start'),...(node.type==='button'?{padding:'12px 16px'}:{})}:{}),
-  backgroundColor:['text','icon'].includes(node.type)?node.backgroundColor:['image','line','path'].includes(node.type)?undefined:node.fill,
+  backgroundColor:['text','icon','image','line','path'].includes(node.type)?undefined:node.fill,
   color:node.type==='text'||node.type==='icon'?node.fill:node.textColor??'#202b38',fontFamily:'sans-serif',fontSize:node.fontSize,fontWeight:node.fontWeight,lineHeight:1.5,overflowWrap:'anywhere',border:node.strokeWidth&&node.type!=='icon'?`${node.strokeWidth}px solid ${node.stroke}`:'none',
-  borderRadius:node.type==='ellipse'?'50%':node.radius,opacity:node.opacity,
+  borderRadius:node.type==='ellipse'?'50%':node.radius,opacity:node.hidden?0:node.opacity,visibility:node.hidden?'hidden':undefined,
   ...(atomic.iconRow?{flexWrap:'nowrap'}:{}),
   ...(node.type==='icon'?{...iconWrapperStyle(node),padding:0}:{}),
   ...(node.type==='text'?{fontFamily:'sans-serif',fontSize:node.fontSize,fontWeight:node.fontWeight,lineHeight:node.lineHeight??1.2,letterSpacing:node.letterSpacing??0,textAlign:node.textAlign??'left',whiteSpace:'pre-wrap',overflowWrap:'anywhere',height:'auto',flexShrink:atomic.parentIconRow?1:0}:{}),
@@ -66,13 +66,12 @@ export function renderAutoLayoutHtml(doc:CanvasDocument,projectId?:string) {
  const render=(node:CanvasNode,parent?:CanvasNode):string=>{
   const style=flowNodeStyle(node,parent,{iconRow:isIconRow(doc,node),parentIconRow:isIconRow(doc,parent)});
   const icon=node.iconName&&['button','input'].includes(node.type)?`<span data-icon-wrapper="true" aria-hidden="true" style="${styleText(iconWrapperStyle(node))}"><img alt="" src="${escape(buttonIconUrl(node))}" style="${styleText(iconGlyphStyle(node))}"/></span>`:'';
-  const attribution=node.imageSource?`<div style="font:11px/1.5 sans-serif;color:#202b38;background:#ffffff;padding:8px">Photo by <a href="${escape(node.imageSource.profileUrl)}" target="_blank" rel="noreferrer">${escape(node.imageSource.photographer)}</a> on <a href="${escape(node.imageSource.photoUrl)}" target="_blank" rel="noreferrer">Unsplash</a></div>`:'';
-  const content=node.type==='text'?escape(node.text):node.type==='icon'||node.type==='image'?`<img alt="${escape(node.imageSource?.alt||node.name)}" src="${escape(flowAssetUrl(node,projectId))}" style="display:block;${node.type==='icon'?styleText(iconGlyphStyle(node)):'width:100%;height:auto;min-width:0;object-fit:'+ (node.imageFit==='contain'?'contain':'cover')}"/>${attribution}`:(node.type==='button'||node.type==='input'?icon+(icon?`<span data-icon-label="true">${escape(node.text)}</span>`:escape(node.text)):'')+flowChildren(doc,node.id).map(child=>render(child,node)).join('');
+  const content=node.type==='text'?escape(node.text):node.type==='icon'||node.type==='image'?`<img alt="${escape(node.imageSource?.alt||node.name)}" src="${escape(flowAssetUrl(node,projectId))}" style="display:block;${node.type==='icon'?styleText(iconGlyphStyle(node)):'width:100%;height:auto;min-width:0;object-fit:'+ (node.imageFit==='contain'?'contain':'cover')}"/>`:(node.type==='button'||node.type==='input'?icon+(icon?`<span data-icon-label="true">${escape(node.text)}</span>`:escape(node.text)):'')+flowChildren(doc,node.id).map(child=>render(child,node)).join('');
   if(node.type==='input'&&node.iconName)return `<div data-node-id="${escape(node.id)}" style="${escape(styleText({...style,flexDirection:'row',alignItems:'center'}))}">${icon}<input aria-label="${escape(node.name)}" placeholder="${escape(node.text)}" readonly style="border:0;padding:0;background:transparent;color:inherit;font:inherit;min-width:0;width:100%"/></div>`;
   if(node.type==='input')return `<input data-node-id="${escape(node.id)}" aria-label="${escape(node.name)}" placeholder="${escape(node.text)}" readonly style="${escape(styleText(style))}"/>`;
   const tag=node.type==='button'?'button':'div';
   return `<${tag}${node.type==='button'?' type="button"':''} data-node-id="${escape(node.id)}"${node.type==='icon'?' data-icon-wrapper="true"':''} style="${escape(styleText(style))}">${content}</${tag}>`;
  };
  const roots=flowChildren(doc);
- return `<div style="${styleText({...flowRootStyle,width:doc.width,minHeight:doc.height,maxWidth:'100%'})}">${roots.map(node=>render(node)).join('')}</div>`+doc.nodes.filter(node=>!node.flow&&node.type==='frame'&&!node.hidden).map(frame=>`<div style="position:absolute;left:${frame.x}px;top:${frame.y}px;width:${frame.width}px;display:flex;flex-direction:column;gap:16px">${flowChildren(doc,frame.id).map(node=>render(node)).join('')}</div>`).join('');
+ return `<div style="${styleText({...flowRootStyle,width:doc.width,minHeight:doc.height,maxWidth:'100%'})}">${roots.map(node=>render(node)).join('')}</div>`+doc.nodes.filter(node=>!node.flow&&node.type==='frame').map(frame=>`<div style="position:absolute;left:${frame.x}px;top:${frame.y}px;width:${frame.width}px;display:flex;flex-direction:column;gap:16px;visibility:${frame.hidden?'hidden':'visible'};opacity:${frame.hidden?0:frame.opacity}">${flowChildren(doc,frame.id).map(node=>render(node)).join('')}</div>`).join('');
 }

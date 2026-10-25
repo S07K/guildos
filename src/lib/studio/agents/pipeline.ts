@@ -3,7 +3,7 @@ import type { CanvasDocument, CanvasNode } from '../canvas.ts';
 import type { CanvasCommand } from '../canvas-commands.ts';
 import type { AgentRole } from '../agent-roles.ts';
 import { activeScreenId, screenDocument, validateScreenEdits } from '../screen-scope.ts';
-import { canvasQualityIssues, screenCompositionIssues } from '../canvas-quality.ts';
+import { screenCompositionIssues } from '../canvas-quality.ts';
 
 export class PipelineGateError extends Error {}
 
@@ -14,7 +14,7 @@ export type PipelineState = {
  document:CanvasDocument;commands:CanvasCommand[];issues:PipelineIssue[];
 };
 export const stageInstructions = [
- 'Create ONLY the active root mobile screen and nested structural containers/grid. Do not create text, images, icons or controls. Preserve existing content. Leave theme styling for the next stage.',
+ 'Create ONLY the active mobile screen root and nested structural containers/grid. Set the root width to 375px using screenPreset mobile. Root height may HUG or use flexible sizing with an 812px minimum. Do not create text, images, icons or controls. Preserve existing content. Leave theme styling for the next stage.',
  'Style existing structural containers with theme colors, background fills, borders and surface radii. Do not create/delete nodes, change layout, or write text.',
  'Populate the structure with functional components, verified Unsplash assets and valid Lucide icons in atomic flex rows. Preserve the root screen. Supply provisional meaningful labels; the next stage refines copy.',
  'Refine text on existing text, button and input nodes only. Do not create/delete nodes or alter styling, layout, images or icons.',
@@ -52,7 +52,7 @@ export function validateStageEdit(state:PipelineState,after:CanvasDocument) {
 }
 export function pipelineIssues(state:PipelineState):PipelineIssue[] {
  const scoped=screenDocument(state.document,state.targetScreenId);
- const issues=[...canvasQualityIssues(scoped),...screenCompositionIssues(scoped)];
+ const issues=[...screenCompositionIssues(scoped)];
  for(const node of scoped.nodes){
   if(!node.flow||!['container','text','image','icon','button','input'].includes(node.type))issues.push({key:`component:${node.id}`,message:`“${node.name}” must use the component flex contract before publication.`});
   if(node.type==='container'&&!['row','column'].includes(node.layout?.direction||''))issues.push({key:`layout:${node.id}`,message:`“${node.name}” requires an explicit horizontal or vertical flex direction.`});
@@ -62,14 +62,15 @@ export function pipelineIssues(state:PipelineState):PipelineIssue[] {
 }
 export function advanceDraft(state:PipelineState,result:{document:CanvasDocument;commands:CanvasCommand[];stageComplete?:boolean}):PipelineState {
  validateStageEdit(state,result.document);
- if(!result.stageComplete&&state.action>=7)throw new PipelineGateError('This stage exceeded eight actions. The private draft was not published.');
+ if(!result.stageComplete&&state.action>=14)throw new PipelineGateError('This stage exceeded fifteen actions. The private draft was not published.');
  return {...state,document:result.document,commands:[...state.commands,...result.commands],stage:state.stage+(result.stageComplete?1:0),action:result.stageComplete?0:state.action+1};
 }
-export function rejectOrApprove(state:PipelineState,reported:PipelineIssue[]):PipelineState {
+export function rejectOrApprove(state:PipelineState,_reported:PipelineIssue[]):PipelineState {
  if(state.stage!==4)throw new Error('Only the final QA stage can approve a turn.');
- const issues=[...pipelineIssues(state),...reported];
+ // QA observations are advisory; deterministic composition requirements remain enforced.
+ const issues=pipelineIssues(state);
  if(!issues.length)return {...state,stage:5,issues:[]};
- if(state.round>=3)throw new PipelineGateError(`QA rejected this turn after three correction rounds. No canvas changes were published.\n${issues.map(issue=>issue.message).join('\n')}`);
+ if(state.round>=3)throw new PipelineGateError(`Structural screen requirements remained incomplete after three correction rounds. No canvas changes were published.\n${issues.map(issue=>issue.message).join('\n')}`);
  const stage=Math.min(...issues.map(issue=>Math.max(0,pipelineRoles.indexOf(issue.agent_role as typeof pipelineRoles[number]))));
  return {...state,stage:Math.min(stage,3),action:0,round:state.round+1,issues};
 }

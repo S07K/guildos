@@ -34,6 +34,7 @@ process.on('SIGTERM', () => stop());
 
 async function start() {
  const env = { ...process.env };
+ env.NODE_ENV ||= 'development';
  // Codex-managed authentication is confined to the local development runner.
  env.STUDIO_CHATGPT_AUTH ||= env.OPENAI_CLIENT_ID ? 'oauth' : 'codex';
  const serviceUrl = new URL(env.AI_SIGNIN_SERVICE_URL || 'http://127.0.0.1:8787');
