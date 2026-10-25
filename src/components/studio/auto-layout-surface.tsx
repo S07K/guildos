@@ -1,13 +1,17 @@
 'use client';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { CANVAS_WORKSPACE_MARGIN, type CanvasDocument, type CanvasNode } from '@/lib/studio/canvas';
 import { buttonIconUrl, flowAssetUrl, flowChildren, flowNodeStyle, flowRootStyle, iconWrapperStyle, iconGlyphStyle, isIconRow } from '@/lib/studio/canvas-layout';
 
 export function AutoLayoutSurface({document:doc,projectId,selected,onSelect,onChange,onCommit,disabled,hand,selecting}:{document:CanvasDocument;projectId:string;selected:string;onSelect:(id:string)=>void;onChange:(doc:CanvasDocument)=>void;onCommit:()=>void;disabled:boolean;hand:boolean;selecting:boolean}) {
  const [editing,setEditing]=useState('');
+ const drag=useRef<{node:CanvasNode;initial:CanvasDocument;x:number;y:number;clientX:number;clientY:number;rect:DOMRect;root:DOMRect;pointerId:number}|null>(null);
  const iconSlot=(node:CanvasNode)=><span data-icon-wrapper="true" aria-hidden="true" style={iconWrapperStyle(node)}><img draggable={false} alt="" src={buttonIconUrl(node)} style={iconGlyphStyle(node)}/></span>;
  const render=(node:CanvasNode,parent?:CanvasNode):React.ReactNode=><div key={node.id} data-node-id={node.id} data-auto-layout="true" data-icon-wrapper={node.type==='icon'?'true':undefined} style={{...flowNodeStyle(node,parent,{iconRow:isIconRow(doc,node),parentIconRow:isIconRow(doc,parent)}),visibility:node.hidden?'hidden':undefined,opacity:node.hidden?0:node.opacity,outline:node.id===selected?'2px solid #386650':undefined,outlineOffset:2,cursor:hand?'grab':'default',userSelect:editing===node.id?'text':'none'}}
-  onPointerDown={event=>{if(disabled||hand||!selecting)return;event.stopPropagation();onSelect(node.id);}}
+  onPointerDown={event=>{if(disabled||hand||!selecting||event.button!==0)return;event.stopPropagation();onSelect(node.id);onCommit();const root=event.currentTarget.closest('[data-testid="auto-layout-root"]');if(!root)return;drag.current={node:structuredClone(node),initial:doc,x:(event.currentTarget.getBoundingClientRect().left-root.getBoundingClientRect().left)*doc.width/root.getBoundingClientRect().width,y:(event.currentTarget.getBoundingClientRect().top-root.getBoundingClientRect().top)*doc.height/root.getBoundingClientRect().height,clientX:event.clientX,clientY:event.clientY,rect:event.currentTarget.getBoundingClientRect(),root:root.getBoundingClientRect(),pointerId:event.pointerId};event.currentTarget.setPointerCapture(event.pointerId);}}
+  onPointerMove={event=>{const action=drag.current;if(!action||action.pointerId!==event.pointerId)return;const scaleX=doc.width/action.root.width,scaleY=doc.height/action.root.height,dx=(event.clientX-action.clientX)*scaleX,dy=(event.clientY-action.clientY)*scaleY;if(Math.hypot(dx,dy)<2)return;const next:CanvasNode={...action.node,flow:false,positionMode:'absolute',x:action.x+dx,y:action.y+dy,width:action.rect.width*scaleX,height:action.rect.height*scaleY};delete next.sizing;delete next.layout;const frame=doc.nodes.find(item=>item.id===action.node.parentId&&item.type==='frame'&&!item.flow);if(frame){next.parentId=frame.id;next.x-=frame.x;next.y-=frame.y;}else delete next.parentId;onChange({...action.initial,nodes:action.initial.nodes.map(item=>item.id===node.id?next:item)});}}
+  onPointerUp={event=>{if(drag.current?.pointerId===event.pointerId)drag.current=null;}}
+  onPointerCancel={event=>{if(drag.current?.pointerId===event.pointerId)drag.current=null;}}
   onDoubleClick={event=>{if(disabled||hand||!selecting||node.type!=='text')return;event.stopPropagation();onCommit();setEditing(node.id);const element=event.currentTarget;requestAnimationFrame(()=>element.focus());}}
   contentEditable={node.type==='text'&&editing===node.id} suppressContentEditableWarning
   role={editing===node.id?'textbox':node.type==='button'?'button':undefined}  aria-label={editing===node.id?'Edit text layer':['button','input'].includes(node.type)?node.text||node.name:undefined}

@@ -5,7 +5,7 @@ import type { CSSProperties } from 'react';
 import { renderAutoLayoutHtml, type AutoLayout, type RelativeSize } from './canvas-layout.ts';
 export const CANVAS_WORKSPACE_MARGIN = 40000;
 export const CANVAS_WORKSPACE_SIZE = 80000;
-export type CanvasNode = { id: string; type: 'button' | 'input' | 'container' | 'frame' | 'rectangle' | 'ellipse' | 'text' | 'line' | 'path' | 'image' | 'icon'; name: string; x: number; y: number; width: number; height: number; fill: string; stroke: string; strokeWidth: number; radius: number; opacity: number; text: string; fontSize: number; fontWeight: number; designSystem?:'components-v1'; contentPadding?:number; textColor?: string; backgroundColor?:string; textAlign?: 'left' | 'center' | 'right'; verticalAlign?: 'top' | 'middle' | 'bottom'; lineHeight?: number; letterSpacing?: number; screen?:boolean; imageUrl?:string; imageSource?:UnsplashPhoto; assetId?: string; imageFit?: 'cover' | 'contain'; iconName?: string; points?: number[]; hidden?: boolean; parentId?: string; flow?: boolean; layout?: AutoLayout; sizing?: {width:RelativeSize;height:RelativeSize} };
+export type CanvasNode = { id: string; type: 'button' | 'input' | 'container' | 'frame' | 'rectangle' | 'ellipse' | 'text' | 'line' | 'path' | 'image' | 'icon'; name: string; positionMode?: 'auto' | 'absolute'; x: number; y: number; width: number; height: number; fill: string; stroke: string; strokeWidth: number; radius: number; opacity: number; text: string; fontSize: number; fontWeight: number; designSystem?:'components-v1'; contentPadding?:number; textColor?: string; backgroundColor?:string; textAlign?: 'left' | 'center' | 'right'; verticalAlign?: 'top' | 'middle' | 'bottom'; lineHeight?: number; letterSpacing?: number; screen?:boolean; imageUrl?:string; imageSource?:UnsplashPhoto; assetId?: string; imageFit?: 'cover' | 'contain'; iconName?: string; points?: number[]; hidden?: boolean; parentId?: string; flow?: boolean; layout?: AutoLayout; sizing?: {width:RelativeSize;height:RelativeSize} };
 export type CanvasDocument = { kind: 'canvas'; width: number; height: number; background: string; nodes: CanvasNode[] };
 export const isCanvas = (value: unknown): value is CanvasDocument => !!value && typeof value === 'object' && 'kind' in value && value.kind === 'canvas';
 export const blankCanvas = (): CanvasDocument => ({ kind: 'canvas', width: 1100, height: 900, background: '#ffffff', nodes: [] });
@@ -61,6 +61,7 @@ export function validateCanvas(value: unknown): CanvasDocument {
   for (const key of ['x','y','width','height','strokeWidth','radius','opacity','fontSize','fontWeight'] as const) if (!Number.isFinite(node[key]) || Math.abs(node[key]) > 20000) throw new Error('Invalid layer dimensions.');
   const styleIssues:string[]=[];
   if(node.flow!==undefined&&typeof node.flow!=='boolean')styleIssues.push('invalid layout mode');
+  if(node.positionMode!==undefined&&!['auto','absolute'].includes(node.positionMode))styleIssues.push('invalid position mode');
   if(node.flow) {
    if(!node.sizing||!['fill-container','hug-contents','fixed'].includes(node.sizing.width)||!['fill-container','hug-contents','fixed'].includes(node.sizing.height))styleIssues.push('invalid relative sizing');
    if(node.type==='text'&&node.sizing?.height!=='hug-contents')styleIssues.push('text height must hug contents');
