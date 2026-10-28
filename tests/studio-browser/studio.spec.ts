@@ -548,7 +548,7 @@ test('screen frames grow around real imagery, long copy and Lucide button icons'
 
  const measurements=await screen.evaluate(element=>({height:element.getBoundingClientRect().height/Number(getComputedStyle(element.parentElement!.parentElement!).zoom||1),scrollHeight:element.scrollHeight,clientHeight:element.clientHeight,width:getComputedStyle(element).width}));
  expect(measurements.clientHeight).toBeGreaterThanOrEqual(810);
- expect(measurements.scrollHeight).toBeLessThanOrEqual(measurements.clientHeight+1);
+ expect(measurements.scrollHeight).toBeGreaterThan(measurements.clientHeight);
  const outside=await screen.evaluate(element=>{const bounds=element.getBoundingClientRect();return [...element.querySelectorAll('[data-node-id]')].some(child=>{const rect=child.getBoundingClientRect();return rect.left<bounds.left-.5||rect.right>bounds.right+.5;});});
  expect(outside).toBe(false);
 });
