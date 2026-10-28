@@ -1,14 +1,16 @@
 'use client';
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { Alert, Button, Stack, TextField } from '@mui/material';
+import { Alert, Button, Divider, Stack, TextField } from '@mui/material';
+import { configureBrowserAuth, signInWithGoogle } from '@/lib/auth/browser';
 import { createProject, saveProviderKey, removeProviderKey, saveOpenRouterKey, removeOpenRouterKey, saveGroqKey, removeGroqKey, sendCode, verifyCode } from '@/app/studio/actions';
-export function SignInForm() {
- const [email,setEmail]=useState(''); const [sent,setSent]=useState(false); const [error,setError]=useState(''); const [pending,start]=useTransition();
- return <Stack component="form" spacing={2.5} onSubmit={event=>{event.preventDefault();const form=new FormData(event.currentTarget);setError('');start(async()=>{try{const result=sent?await verifyCode(email,String(form.get('code')||'').trim()):await sendCode(email);if(result&&'error' in result)setError(result.error||'Please try again.');else if(sent&&result&&'verified' in result)window.location.replace('/studio');else if(!sent)setSent(true);}catch{setError('Unable to sign in. Please try again.');}});}}>
+export function SignInForm({config,nextUrl='/studio',initialError=''}:{config:{url:string;key:string};nextUrl?:string;initialError?:string}) {
+ const [email,setEmail]=useState(''); const [sent,setSent]=useState(false); const [error,setError]=useState(initialError); const [pending,start]=useTransition();
+ return <Stack component="form" spacing={2.5} onSubmit={event=>{event.preventDefault();const form=new FormData(event.currentTarget);setError('');start(async()=>{try{const result=sent?await verifyCode(email,String(form.get('code')||'').trim()):await sendCode(email);if(result&&'error' in result)setError(result.error||'Please try again.');else if(sent&&result&&'verified' in result)window.location.replace(nextUrl);else if(!sent)setSent(true);}catch{setError('Unable to sign in. Please try again.');}});}}>
+  {!sent&&<><Button variant="contained" type="button" disabled={pending} onClick={()=>{setError('');start(async()=>{try{configureBrowserAuth(config);await signInWithGoogle(nextUrl);}catch{setError('Google sign-in is unavailable. Try again or use an email code.');}});}}>Continue with Google</Button><Divider sx={{fontSize:12,color:'text.secondary'}}>or continue with email</Divider></>}
   <TextField label="Email address" type="email" value={email} onChange={e=>setEmail(e.target.value)} required autoComplete="email" disabled={sent||pending} slotProps={{htmlInput:{maxLength:254}}}/>
   {sent&&<><Alert severity="info" role="status">Check your email for your sign-in code.</Alert><TextField label="Email code" name="code" required autoFocus autoComplete="one-time-code" slotProps={{htmlInput:{inputMode:'numeric',pattern:'[0-9]{6,8}',minLength:6,maxLength:8}}}/></>}
-  {error&&<Alert severity="error">{error}</Alert>}<Button variant="contained" type="submit" disabled={pending}>{pending?'One moment…':sent?'Enter your studio':'Send sign-in code'}</Button>
+  {error&&<Alert severity="error">{error}</Alert>}<Button variant={sent?"contained":"outlined"} type="submit" disabled={pending}>{pending?'One moment…':sent?'Enter your studio':'Send sign-in code'}</Button>
   {sent&&<Button type="button" disabled={pending} onClick={()=>{setSent(false);setError('');}}>Use another email or request a new code</Button>}
  </Stack>;
 }

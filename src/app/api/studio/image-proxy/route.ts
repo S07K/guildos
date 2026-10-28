@@ -1,3 +1,4 @@
+import { studioUser } from '@/lib/studio/supabase';
 import { authConfig, sessionClient } from '@/lib/studio/supabase';
 import { privateJson as json } from '@/lib/studio/version-commit';
 import { isUnsplashImageUrl } from '@/lib/studio/image-source';
@@ -8,7 +9,7 @@ const MAX_BYTES = 12 * 1024 * 1024;
 export async function GET(request: Request) {
   if (!authConfig()) return json({error:'Studio access is not configured.'},503);
   const client = await sessionClient();
-  const {data:{user}} = await client.auth.getUser();
+  const {data:{user}} = await studioUser(client);
   if (!user) return json({error:'Sign in to export images.'},401);
   const url = new URL(request.url).searchParams.get('url');
   if (!isUnsplashImageUrl(url)) return json({error:'Only verified Unsplash image URLs are supported.'},400);

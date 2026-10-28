@@ -2,7 +2,7 @@
 import { createServer } from 'node:http';
 import { randomUUID, createHash } from 'node:crypto';
 const user = { id: '00000000-0000-4000-8000-000000000001', email: 'studio-test@example.com', aud: 'authenticated', role: 'authenticated', app_metadata: {}, user_metadata: {}, created_at: new Date().toISOString() };
-const token = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url') + '.' + Buffer.from(JSON.stringify({ sub: user.id, exp: Math.floor(Date.now()/1000)+3600, role: 'authenticated' })).toString('base64url') + '.fixture-signature';
+const token = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url') + '.' + Buffer.from(JSON.stringify({ sub: user.id, session_id:'00000000-0000-4000-8000-000000000002', exp: Math.floor(Date.now()/1000)+3600, role: 'authenticated' })).toString('base64url') + '.fixture-signature';
 const tables = { studio_workspaces: [], studio_projects: [], studio_keys: [], studio_versions: [], studio_agent_notes: [], studio_agent_messages: [], studio_canvas_commits: [], studio_tasks: [], studio_openrouter_keys: [], studio_groq_keys: [], studio_task_events: [], studio_task_subtasks: [], studio_generation_limits: [] };
 const storageFiles=new Set();
 let failedStorageDeletes=0;
@@ -16,6 +16,7 @@ const server = createServer(async (req, res) => {
  if(url.pathname==='/__test/delay-project'&&req.method==='POST'){projectReadDelay={id:body.id,ms:Math.min(5000,Math.max(0,Number(body.ms)||0))};return send({ok:true});}
  if (url.pathname === '/auth/v1/otp') return send({});
  if (url.pathname === '/auth/v1/verify') return body.token === '123456' ? send({ access_token: token, refresh_token: 'test-refresh-token', token_type: 'bearer', expires_in: 3600, user }) : send({ message: 'Invalid token' }, 400);
+ if (url.pathname === '/auth/v1/token' && url.searchParams.get('grant_type')==='pkce') return body.auth_code==='fixture-oauth-code'&&body.code_verifier ? send({access_token:token,refresh_token:'test-refresh-token',token_type:'bearer',expires_in:3600,user}) : send({message:'Invalid code'},400);
  if (url.pathname === '/auth/v1/logout') return send({});
  const authenticated = req.headers.authorization === 'Bearer ' + token;
  const admin = req.headers.apikey === 'sb_secret_test-studio-only';

@@ -1,3 +1,4 @@
+import { studioUser } from '@/lib/studio/supabase';
 import { adminClient, authConfig, sessionClient } from '@/lib/studio/supabase';
 
 export const runtime = 'nodejs';
@@ -10,7 +11,7 @@ export async function PATCH(request: Request) {
  if (!origin || origin !== expectedOrigin) return json({ error: 'Submit this request from your GuildOS studio.' }, 403);
  if (!authConfig()) return json({ error: 'Studio access is not configured.' }, 503);
  const client = await sessionClient();
- const { data: { user } } = await client.auth.getUser();
+ const { data: { user } } = await studioUser(client);
  if (!user) return json({ error: 'Your session expired. Sign in again.' }, 401);
  let body: { projectId?: unknown; name?: unknown };
  try { body = await request.json(); } catch { return json({ error: 'Invalid project name.' }, 400); }
@@ -27,7 +28,7 @@ export async function DELETE(request:Request) {
  if(request.headers.get('origin')!==new URL(process.env.STUDIO_APP_URL||request.url).origin)return json({error:'Submit this request from your GuildOS studio.'},403);
  if(!authConfig())return json({error:'Studio access is not configured.'},503);
  const client=await sessionClient();
- const {data:{user}}=await client.auth.getUser();
+ const {data:{user}}=await studioUser(client);
  if(!user)return json({error:'Your session expired. Sign in again.'},401);
  let body:{projectId?:unknown};
  try{body=await request.json();}catch{return json({error:'Invalid project.'},400);}

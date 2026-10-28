@@ -1,3 +1,4 @@
+import { studioUser } from '@/lib/studio/supabase';
 import { randomUUID } from 'node:crypto';
 import { adminClient, authConfig, sessionClient } from '@/lib/studio/supabase';
 import { privateJson as json, uuid } from '@/lib/studio/version-commit';
@@ -19,7 +20,7 @@ export async function POST(request:Request) {
  const length=Number(request.headers.get('content-length'));
  if(Number.isFinite(length)&&length>maxBytes+65536) return json({error:'Images must be under 5 MB.'},413);
  const client=await sessionClient();
- const {data:{user}}=await client.auth.getUser();
+ const {data:{user}}=await studioUser(client);
  if(!user) return json({error:'Your session expired. Sign in again.'},401);
  let form:FormData;
  try {form=await request.formData();} catch {return json({error:'Choose a PNG, JPEG, or WebP image.'},400);}

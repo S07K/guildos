@@ -1,3 +1,4 @@
+import { studioUser } from '@/lib/studio/supabase';
 import { taskDisplay } from '@/lib/studio/task-display';
 import { dailyLimitWait } from '@/lib/studio/task-wait';
 import { taskReviewStatuses } from '@/lib/studio/review-state';
@@ -9,7 +10,7 @@ const columns='id,parent_task_id,source_note_id,workspace_id,delegation_id,task_
 export async function GET(request:Request) {
  if(!authConfig()) return json({error:'Studio access is not configured.'},503);
  const client=await sessionClient();
- const {data:{user}}=await client.auth.getUser();
+ const {data:{user}}=await studioUser(client);
  if(!user) return json({error:'Your session expired. Sign in again.'},401);
  const params=new URL(request.url).searchParams;
  const projectId=params.get('projectId');
@@ -62,7 +63,7 @@ export async function PATCH(request:Request) {
  if(request.headers.get('origin')!==new URL(process.env.STUDIO_APP_URL||request.url).origin) return json({error:'Use your GuildOS studio to update tasks.'},403);
  if(!authConfig()) return json({error:'Studio access is not configured.'},503);
  const client=await sessionClient();
- const {data:{user}}=await client.auth.getUser();
+ const {data:{user}}=await studioUser(client);
  if(!user) return json({error:'Your session expired. Sign in again.'},401);
  let body;
  try {body=await readCommitBody(request);} catch{return json({error:'Invalid task action.'},400);}
