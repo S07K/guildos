@@ -1,3 +1,4 @@
+import { studioUser } from '@/lib/studio/supabase';
 import { randomUUID } from 'node:crypto';
 import { adminClient, authConfig, sessionClient } from '@/lib/studio/supabase';
 import { openKey } from '@/lib/studio/vault.mjs';
@@ -15,7 +16,7 @@ async function context(request: Request, role: string) {
  if (!authConfig()) return { error: json({ error: 'Studio access is not configured.' }, 503) };
  if (!agentRoles.includes(role as typeof agentRoles[number])) return { error: json({ error: 'Agent not found.' }, 404) };
  const client = await sessionClient();
- const { data: { user } } = await client.auth.getUser();
+ const { data: { user } } = await studioUser(client);
  if (!user) return { error: json({ error: 'Your session expired. Sign in again.' }, 401) };
  const projectId = new URL(request.url).searchParams.get('projectId');
  if (!projectId || !uuid.test(projectId)) return { error: json({ error: 'Project not found.' }, 404) };

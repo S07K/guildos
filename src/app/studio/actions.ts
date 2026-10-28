@@ -3,12 +3,15 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { adminClient, sessionClient, studioSession } from '@/lib/studio/supabase';
 import { sealKey } from '@/lib/studio/vault.mjs';
+import { cookies } from 'next/headers';
+import { authCookieOptions, SESSION_EXPIRY_COOKIE, isAuthCookie } from '@/lib/auth/config';
+import { issueSessionWindow } from '@/lib/auth/session-window';
 import { codeDeliveryError } from '@/lib/studio/auth-errors.mjs';
 
 export async function sendCode(email: string) {
  if (typeof email !== 'string' || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: 'Enter a valid email address.' };
  try {
-  const client = await sessionClient();
+  const client = await sessionClient(true);
   const { error } = await client.auth.signInWithOtp({ email: email.trim().toLowerCase() });
   if (error) {
    const failure = codeDeliveryError(error);
@@ -21,15 +24,19 @@ export async function sendCode(email: string) {
 export async function verifyCode(email: string, token: string) {
  if (typeof email !== 'string' || email.length > 254 || typeof token !== 'string' || !/^\d{6,8}$/.test(token)) return { error: 'Enter the code from your email.' };
  try {
-  const client = await sessionClient();
-  const { error } = await client.auth.verifyOtp({ email: email.trim().toLowerCase(), token, type: 'email' });
-  if (error) return { error: 'That code is invalid or expired. Request a new code and try again.' };
+  const client = await sessionClient(true);
+  const { data, error } = await client.auth.verifyOtp({ email: email.trim().toLowerCase(), token, type: 'email' });
+  if (error || !data.session) return { error: 'That code is invalid or expired. Request a new code and try again.' };
+  (await cookies()).set(SESSION_EXPIRY_COOKIE,issueSessionWindow(data.session),{...authCookieOptions,httpOnly:true});
  } catch { return { error: 'Sign-in is temporarily unavailable.' }; }
  return { verified: true };
 }
 export async function signOut() {
- const client = await sessionClient();
- await client.auth.signOut();
+ const client = await sessionClient(true);
+ try {await client.auth.signOut({scope:'local'});} finally {
+  const jar=await cookies();
+  for(const cookie of jar.getAll()) if(isAuthCookie(cookie.name)||cookie.name===SESSION_EXPIRY_COOKIE) jar.set(cookie.name,'',{...authCookieOptions,httpOnly:cookie.name===SESSION_EXPIRY_COOKIE,maxAge:0});
+ }
  redirect('/signin');
 }
 export async function createProject(form: FormData) {

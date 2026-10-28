@@ -1,3 +1,4 @@
+import { studioUser } from '@/lib/studio/supabase';
 import { adminClient, authConfig, sessionClient } from '@/lib/studio/supabase';
 import { privateJson as json, uuid } from '@/lib/studio/version-commit';
 
@@ -8,7 +9,7 @@ export async function GET(request:Request,{params}:{params:Promise<{id:string}>}
  const projectId=new URL(request.url).searchParams.get('projectId');
  if(!uuid.test(id)||!projectId||!uuid.test(projectId)) return json({error:'Invalid image.'},400);
  const client=await sessionClient();
- const {data:{user}}=await client.auth.getUser();
+ const {data:{user}}=await studioUser(client);
  if(!user) return json({error:'Your session expired. Sign in again.'},401);
  const {data:project}=await client.from('studio_projects').select('id,workspace_id').eq('id',projectId).single();
  if(!project) return json({error:'Image not found.'},404);

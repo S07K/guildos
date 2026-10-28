@@ -5,17 +5,17 @@ import { blankCanvas } from '../../src/lib/studio/canvas.ts';
 
 test('anonymous users cannot open projects or generate designs', async ({ page, request }) => {
  await page.goto('/studio'); await expect(page).toHaveURL(/\/signin$/);
- const response = await request.post('/api/studio/generate', { headers: { origin: 'http://127.0.0.1:3105' }, data: { projectId: randomUUID(), feedback: '' } });
+ const response = await request.post('/api/studio/generate', { headers: { origin: 'https://127.0.0.1:3105' }, data: { projectId: randomUUID(), feedback: '' } });
  expect(response.status()).toBe(401);
  const crossSite = await request.post('/api/studio/generate', { headers: { origin: 'https://other.example' }, data: {} });
  expect(crossSite.status()).toBe(403);
- const manual = await request.post('/api/studio/versions', { headers: { origin: 'http://127.0.0.1:3105' }, data: {} });
+ const manual = await request.post('/api/studio/versions', { headers: { origin: 'https://127.0.0.1:3105' }, data: {} });
  expect(manual.status()).toBe(401);
  expect((await request.post('/api/studio/versions', { headers: { origin: 'https://other.example' }, data: {} })).status()).toBe(403);
  expect((await request.get(`/api/studio/canvas?projectId=${randomUUID()}`)).status()).toBe(401);
- expect((await request.post('/api/studio/canvas/commands', {headers:{origin:'http://127.0.0.1:3105'},data:{}})).status()).toBe(401);
+ expect((await request.post('/api/studio/canvas/commands', {headers:{origin:'https://127.0.0.1:3105'},data:{}})).status()).toBe(401);
  expect((await request.post('/api/studio/canvas/commands', {headers:{origin:'https://other.example'},data:{}})).status()).toBe(403);
- expect((await request.post('/api/studio/images', {headers:{origin:'http://127.0.0.1:3105'},data:{projectId:randomUUID(),query:'food bowls'}})).status()).toBe(401);
+ expect((await request.post('/api/studio/images', {headers:{origin:'https://127.0.0.1:3105'},data:{projectId:randomUUID(),query:'food bowls'}})).status()).toBe(401);
  expect((await request.post('/api/studio/images', {headers:{origin:'https://other.example'},data:{projectId:randomUUID(),query:'food bowls'}})).status()).toBe(403);
  await expect(page.locator('meta[name=robots]')).toHaveAttribute('content', /noindex/);
 });
@@ -117,7 +117,7 @@ test('manual canvas draws and persists a layer without a provider key', async ({
  // A peer commits while this tab holds an older revision.
  const projectId = page.url().split('/').at(-1)!;
  const command = {projectId,requestId:randomUUID(),expectedVersionId:savedVersion.id,commands:[{type:'update',id:savedVersion.document.nodes[0].id,patch:{name:'Peer edit'}}]};
- const headers = {origin:'http://127.0.0.1:3105'};
+ const headers = {origin:'https://127.0.0.1:3105'};
  const peer = await page.request.post('/api/studio/canvas/commands',{headers,data:command});
  expect(peer.status()).toBe(201);
  const peerVersion = (await peer.json()).version;
@@ -246,7 +246,7 @@ test('nested auto layout expands for copy changes and narrower screens',async({p
  const make=(id:string,type:string,parentId:string|null,text='')=>({id,type,parentId,layoutMode:'VERTICAL',primaryAxisSizingMode:'HUG',counterAxisSizingMode:'FILL',itemSpacing:13,padding:type==='container'?19:type==='button'||type==='input'?16:0,properties:{name:id,text,color:type==='button'?'on-accent':'text',backgroundColor:['text','icon'].includes(type)?null:type==='button'?'accent':'surface',borderRadius:9,fontSize:18}});
  const copy='Fresh meals from your neighborhood restaurants. Choose your favorite dish and get it delivered to your door. ';
  const nodes=[make('Screen','container',null),make('Title','text','Screen','Lunch delivered'),make('Search','input','Screen','Search restaurants'),make('Paragraph','text','Screen',copy),{...make('Actions','container','Screen'),layoutMode:'HORIZONTAL'},...['One','Two','Three'].map(id=>make(id,'button','Actions',`Choose ${id}`))];
- const headers={origin:'http://127.0.0.1:3105'};
+ const headers={origin:'https://127.0.0.1:3105'};
  const saved=await page.request.post('/api/studio/canvas/commands',{headers,data:{projectId,requestId:randomUUID(),expectedVersionId:null,commands:[{type:'document',patch:{width:600}},...nodes.map(node=>({type:'create',node}))]}});
  expect(saved.status()).toBe(201);
  await page.reload();
@@ -283,7 +283,7 @@ test('nested auto layout expands for copy changes and narrower screens',async({p
 });
 
 test('projects can be deleted from cards and the editor, with confirmation and retryable image cleanup',async({page})=>{
- expect((await page.request.delete('/api/studio/projects',{headers:{origin:'http://127.0.0.1:3105'},data:{projectId:randomUUID()}})).status()).toBe(401);
+ expect((await page.request.delete('/api/studio/projects',{headers:{origin:'https://127.0.0.1:3105'},data:{projectId:randomUUID()}})).status()).toBe(401);
  await page.goto('/signin');
  await page.getByLabel('Email address').fill('studio-test@example.com');
  await page.getByRole('button',{name:'Send sign-in code'}).click();
@@ -322,7 +322,7 @@ test('projects can be deleted from cards and the editor, with confirmation and r
  await expect(page).toHaveURL('/studio/projects');
  expect((await (await page.request.get('http://127.0.0.1:3199/testing/assets')).json()).paths).toHaveLength(0);
  expect((await page.request.get(`/api/studio/canvas?projectId=${first}`)).status()).toBe(404);
- const headers={origin:'http://127.0.0.1:3105'};
+ const headers={origin:'https://127.0.0.1:3105'};
  expect((await page.request.delete('/api/studio/projects',{headers,data:{projectId:first}})).status()).toBe(200);
  expect((await page.request.delete('/api/studio/projects',{headers:{origin:'https://untrusted.example'},data:{projectId:first}})).status()).toBe(403);
  expect((await page.request.delete('/api/studio/projects',{headers,data:{projectId:'invalid'}})).status()).toBe(400);
@@ -468,7 +468,7 @@ test('Kanban marks revised work as changes requested and refuses stale approval'
  await expect(details.getByText(task.instruction, { exact: true })).toBeVisible();
  await expect(details.getByRole('button', { name: 'Approve changes', exact: true })).toHaveCount(0);
  await page.getByRole('button', { name: 'Close task details' }).click();
- const stale = await page.request.patch('/api/studio/tasks', { headers: { origin: 'http://127.0.0.1:3105' }, data: { taskId: task.id, action: 'approve' } });
+ const stale = await page.request.patch('/api/studio/tasks', { headers: { origin: 'https://127.0.0.1:3105' }, data: { taskId: task.id, action: 'approve' } });
  expect(stale.status()).toBe(409);
 });
 

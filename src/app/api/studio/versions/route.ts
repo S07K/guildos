@@ -1,3 +1,4 @@
+import { studioUser } from '@/lib/studio/supabase';
 import { authConfig, sessionClient } from '@/lib/studio/supabase';
 import { validateDesign } from '@/lib/studio/design.mjs';
 import { isCanvas, validateCanvas } from '@/lib/studio/canvas';
@@ -10,7 +11,7 @@ export async function POST(request: Request) {
  if (!origin || origin !== new URL(expected).origin) return json({ error: 'Submit this request from your GuildOS studio.' }, 403);
  if (!authConfig()) return json({ error: 'Studio access is not configured.' }, 503);
  const client = await sessionClient();
- const { data: { user } } = await client.auth.getUser();
+ const { data: { user } } = await studioUser(client);
  if (!user) return json({ error: 'Your session expired. Sign in again.' }, 401);
  let body;
  try { body = await readCommitBody(request); }

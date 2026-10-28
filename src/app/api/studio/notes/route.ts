@@ -1,3 +1,4 @@
+import { studioUser } from '@/lib/studio/supabase';
 import { taskDisplay } from '@/lib/studio/task-display';
 import { adminClient, authConfig, sessionClient } from '@/lib/studio/supabase';
 import { agentIdentity, agentRoles } from '@/lib/studio/agent-roles';
@@ -18,7 +19,7 @@ async function projectFor(client: Awaited<ReturnType<typeof sessionClient>>, id:
 export async function GET(request: Request) {
  if (!authConfig()) return json({ error: 'Studio access is not configured.' }, 503);
  const client = await sessionClient();
- const { data: { user } } = await client.auth.getUser();
+ const { data: { user } } = await studioUser(client);
  if (!user) return json({ error: 'Your session expired. Sign in again.' }, 401);
  const projectId = new URL(request.url).searchParams.get('projectId');
  if (!projectId || !uuid.test(projectId)) return json({ error: 'Invalid project.' }, 400);
@@ -59,7 +60,7 @@ export async function POST(request: Request) {
  if (!origin || origin !== new URL(expected).origin) return json({ error: 'Submit this request from your GuildOS studio.' }, 403);
  if (!authConfig()) return json({ error: 'Studio access is not configured.' }, 503);
  const client = await sessionClient();
- const { data: { user } } = await client.auth.getUser();
+ const { data: { user } } = await studioUser(client);
  if (!user) return json({ error: 'Your session expired. Sign in again.' }, 401);
  let body: { projectId?: unknown; versionId?: unknown; anchor?: unknown; mentionedRole?: unknown; targetLayerId?:unknown; text?: unknown; requestId?: unknown };
  try {

@@ -1,3 +1,4 @@
+import { studioUser } from '@/lib/studio/supabase';
 import { authConfig, sessionClient } from '@/lib/studio/supabase';
 import { localCodex, localCodexEnabled } from '@/lib/studio/codex-local';
 
@@ -12,7 +13,7 @@ async function context(request: Request) {
  if (crossSite || (origin && origin !== new URL(expected).origin) || (request.method !== 'GET' && !origin)) return { response: json({ error: 'Submit this request from your GuildOS studio.' }, 403) };
  if (!authConfig()) return { response: json({ status: 'unconfigured', error: 'Studio access is not configured.' }, 503) };
  const client = await sessionClient();
- const { data: { user } } = await client.auth.getUser();
+ const { data: { user } } = await studioUser(client);
  if (!user) return { response: json({ error: 'Your session expired. Sign in again.' }, 401) };
  const { data: workspace } = await client.from('studio_workspaces').select('id').eq('owner_id', user.id).maybeSingle();
  if (!workspace) return { response: json({ error: 'Workspace not found.' }, 404) };

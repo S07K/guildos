@@ -17,7 +17,7 @@ async function project(page:Page,nodes:CanvasNode[]=[]) {
  await expect(page).toHaveURL(/\/studio\/projects\/[0-9a-f-]{36}$/);
  const id=page.url().split('/').at(-1)!;
  if(nodes.length){
-  const response=await page.request.post('/api/studio/canvas/commands',{headers:{origin:'http://127.0.0.1:3105'},data:{projectId:id,requestId:randomUUID(),expectedVersionId:null,commands:nodes.map(node=>({type:'create',node}))}});
+  const response=await page.request.post('/api/studio/canvas/commands',{headers:{origin:'https://127.0.0.1:3105'},data:{projectId:id,requestId:randomUUID(),expectedVersionId:null,commands:nodes.map(node=>({type:'create',node}))}});
   expect(response.status(),await response.text()).toBe(201);
   await page.reload();
  }
