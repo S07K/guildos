@@ -101,7 +101,7 @@ test('manual canvas draws and persists a layer without a provider key', async ({
  const startX = left + Math.min(80, visibleWidth / 3), startY = top + Math.min(80, visibleHeight / 3);
  await page.mouse.move(startX, startY); await page.mouse.down();
  await page.mouse.move(startX + 200, startY + 110, { steps: 5 }); await page.mouse.up();
- await expect(canvas.locator('svg rect[data-node-id]')).toHaveCount(1);
+ await expect(canvas.locator('[data-node-type="rectangle"]')).toHaveCount(1);
  await page.getByLabel('Layer name').fill('Hero panel');
  await page.getByRole('button', { name: 'Project actions' }).click();
  const saveResponse = page.waitForResponse(response => response.url().endsWith('/api/studio/versions') && response.request().method() === 'POST');
@@ -109,7 +109,7 @@ test('manual canvas draws and persists a layer without a provider key', async ({
  const savedVersion = (await (await saveResponse).json()).version;
  await expect(page.getByText('Unsaved', { exact: true })).toHaveCount(0);
  await page.reload();
- await expect(page.getByTestId('manual-canvas').locator('svg rect[data-node-id]')).toHaveCount(1);
+ await expect(page.getByTestId('manual-canvas').locator('[data-node-type="rectangle"]')).toHaveCount(1);
  // The viewport is re-centered after reload; select the persisted layer by name.
  await page.getByRole('button', { name: 'Hero panel Toggle visibility Hero panel', exact: true }).click();
  await expect(page.getByLabel('Layer name')).toHaveValue('Hero panel');
@@ -161,17 +161,17 @@ test('canvas text alignment and image insertion stay editable', async ({ page })
  expect(box).not.toBeNull();expect(viewport).not.toBeNull();
  const x=Math.max(box!.x,viewport!.x)+80,y=Math.max(box!.y,viewport!.y)+80;
  await page.mouse.click(x,y);
- await expect(canvas.locator('foreignObject')).toHaveCount(1);
+ await expect(canvas.locator('[data-node-type="text"]')).toHaveCount(1);
  await page.getByLabel('Text alignment',{exact:true}).getByRole('button',{name:'Align text center'}).click();
- await expect(canvas.locator('foreignObject div')).toHaveCSS('text-align','center');
+ await expect(canvas.locator('[data-node-type="text"]')).toHaveCSS('text-align','center');
  await page.getByLabel('Text content').fill('Fresh lunch, delivered');
  await page.getByRole('button',{name:'Fit height to text'}).click();
  await page.getByRole('button',{name:'Select tool'}).click();
  await expect(page.getByRole('button',{name:'Select tool'})).toHaveAttribute('aria-pressed','true');
- await canvas.locator('foreignObject div').dblclick();
+ await canvas.locator('[data-node-type="text"]').dblclick();
  await expect(page.getByRole('textbox',{name:'Edit text layer'})).toBeVisible();
  await page.keyboard.press('Escape');
- const textBox=await canvas.locator('foreignObject').boundingBox();
+ const textBox=await canvas.locator('[data-node-type="text"]').boundingBox();
  expect(textBox).not.toBeNull();
  await page.mouse.move(textBox!.x+12,textBox!.y+12);await page.mouse.down();
  await page.mouse.move(textBox!.x+100,textBox!.y+12,{steps:5});await page.mouse.up();
@@ -183,7 +183,7 @@ test('canvas text alignment and image insertion stay editable', async ({ page })
  expect(await scroll.evaluate(element=>element.scrollLeft)).toBeLessThan(before);
  await page.getByRole('button',{name:'Hand tool'}).click();
  const handBefore=await scroll.evaluate(element=>element.scrollLeft);
- const handText=await canvas.locator('foreignObject').boundingBox();
+ const handText=await canvas.locator('[data-node-type="text"]').boundingBox();
  await page.mouse.move(handText!.x+15,handText!.y+10);await page.mouse.down();
  await page.mouse.move(handText!.x+75,handText!.y+10,{steps:5});await page.mouse.up();
  expect(await scroll.evaluate(element=>element.scrollLeft)).toBeLessThan(handBefore);
@@ -193,17 +193,17 @@ test('canvas text alignment and image insertion stay editable', async ({ page })
  await page.route('**/api/studio/assets/*',route=>route.fulfill({status:200,contentType:'image/png',body:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg==','base64')}));
  await page.getByRole('button',{name:'Insert image'}).click();
  await page.getByLabel('Upload canvas image').setInputFiles({name:'lunch.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg==','base64')});
- await expect(canvas.locator('image[data-node-id]')).toHaveCount(1);
+ await expect(canvas.locator('[data-node-type="image"] > img, [data-node-type="icon"] > img')).toHaveCount(1);
  await expect(page.getByLabel('Image fit')).toContainText('Cover');
  await page.getByLabel('Image fit').click();
  await page.getByRole('option',{name:'Contain · show entire image'}).click();
- await expect(canvas.locator('image[data-node-id]')).toHaveAttribute('preserveAspectRatio','xMidYMid meet');
+ await expect(canvas.locator('[data-node-type="image"] > img, [data-node-type="icon"] > img')).toHaveCSS('object-fit','contain');
  await page.getByRole('button',{name:'Align left within canvas'}).click();
  await expect(page.getByLabel('X position')).toHaveValue('0');
  await page.getByRole('button',{name:'Insert icon'}).click();
  await page.getByRole('textbox',{name:'Search icons'}).fill('shopping cart');
  await page.getByRole('button',{name:'Insert ShoppingCart icon'}).click();
- await expect(canvas.locator('image[data-node-id]')).toHaveCount(2);
+ await expect(canvas.locator('[data-node-type="image"] > img, [data-node-type="icon"] > img')).toHaveCount(2);
  await expect(page.getByLabel('Selected element properties').getByText('ShoppingCart',{exact:true})).toBeVisible();
  const iconResponse=await page.request.get('/api/studio/icons/ShoppingCart?color=%23123456&strokeWidth=1.5');
  expect(iconResponse.status()).toBe(200);
@@ -211,7 +211,7 @@ test('canvas text alignment and image insertion stay editable', async ({ page })
  await page.getByRole('button',{name:'Project actions'}).click();
  await page.getByRole('menuitem',{name:'Save changes'}).click();
  await page.reload();
- await expect(page.getByTestId('manual-canvas').locator('image[data-node-id]')).toHaveCount(2);
+ await expect(page.getByTestId('manual-canvas').locator('[data-node-type="image"] > img, [data-node-type="icon"] > img')).toHaveCount(2);
 });
 
 test('conversation shows a useful error when its API returns HTML', async ({page})=>{
@@ -243,7 +243,7 @@ test('nested auto layout expands for copy changes and narrower screens',async({p
  await page.getByRole('button',{name:'Create project',exact:true}).click();
  await expect(page).toHaveURL(/\/studio\/projects\/[0-9a-f-]{36}$/);
  const projectId=page.url().split('/').at(-1)!;
- const make=(id:string,type:string,parentId:string|null,text='')=>({id,type,parentId,layoutMode:'VERTICAL',primaryAxisSizingMode:'HUG',counterAxisSizingMode:'FILL',itemSpacing:13,padding:type==='container'?19:type==='button'||type==='input'?16:0,properties:{name:id,text,color:type==='button'?'on-accent':'text',backgroundColor:type==='button'?'accent':'surface',borderRadius:9,fontSize:18}});
+ const make=(id:string,type:string,parentId:string|null,text='')=>({id,type,parentId,layoutMode:'VERTICAL',primaryAxisSizingMode:'HUG',counterAxisSizingMode:'FILL',itemSpacing:13,padding:type==='container'?19:type==='button'||type==='input'?16:0,properties:{name:id,text,color:type==='button'?'on-accent':'text',backgroundColor:['text','icon'].includes(type)?null:type==='button'?'accent':'surface',borderRadius:9,fontSize:18}});
  const copy='Fresh meals from your neighborhood restaurants. Choose your favorite dish and get it delivered to your door. ';
  const nodes=[make('Screen','container',null),make('Title','text','Screen','Lunch delivered'),make('Search','input','Screen','Search restaurants'),make('Paragraph','text','Screen',copy),{...make('Actions','container','Screen'),layoutMode:'HORIZONTAL'},...['One','Two','Three'].map(id=>make(id,'button','Actions',`Choose ${id}`))];
  const headers={origin:'http://127.0.0.1:3105'};
@@ -262,7 +262,7 @@ test('nested auto layout expands for copy changes and narrower screens',async({p
  const before=(await paragraph.boundingBox())!;
  await page.getByRole('button',{name:'Paragraph Toggle visibility Paragraph',exact:true}).click();
  await expect(page.getByLabel('Height sizing')).toContainText('Hug contents');
- await expect(page.getByLabel('X position')).toHaveCount(0);
+ await expect(page.getByLabel('Position mode')).toContainText('Auto layout');
  await page.getByLabel('Text content').fill(copy.repeat(5));
  const grown=(await paragraph.boundingBox())!,row=(await actions.boundingBox())!;
  expect(grown.height).toBeGreaterThan(before.height);

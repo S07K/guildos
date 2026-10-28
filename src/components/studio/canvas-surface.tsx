@@ -1,44 +1,161 @@
 'use client';
-import { useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from 'react';
 import { AutoLayoutSurface } from './auto-layout-surface';
-import { CANVAS_WORKSPACE_MARGIN, CANVAS_WORKSPACE_SIZE, canvasAssetUrl, canvasIconUrl, canvasTextStyle, containingFrame, type CanvasDocument, type CanvasNode } from '@/lib/studio/canvas';
+import { canvasElement, localPointer, measureCanvasNode } from './canvas-geometry';
+import { absoluteNode, createCanvasNode, drawingBounds, normalizeCanvasPositions, type NodeGeometry } from '@/lib/studio/canvas-position';
+import { CANVAS_WORKSPACE_SIZE, type CanvasDocument, type CanvasNode } from '@/lib/studio/canvas';
+import { agentIdentity, type AgentRole } from '@/lib/studio/agent-roles';
+import { AgentMark } from './agent-identity';
 export type CanvasTool = 'select' | 'hand' | 'frame' | 'rectangle' | 'ellipse' | 'text' | 'line' | 'path';
-export function CanvasSurface({ document: doc, projectId, tool, selected, onSelect, onChange, onCommit, disabled, framePreset }: { document: CanvasDocument; projectId:string; tool: CanvasTool; selected: string; onSelect: (id: string) => void; onChange: (doc: CanvasDocument) => void; onCommit: () => void; disabled: boolean; framePreset?: { width: number; height: number } | null }) {
- const root = useRef<HTMLDivElement>(null);
- const action = useRef<{ kind: 'move' | 'resize' | 'create'; x: number; y: number; node: CanvasNode; initial: CanvasDocument } | null>(null);
- const [editing, setEditing] = useState('');
- const lastPressedId = useRef('');
- const worldWidth = CANVAS_WORKSPACE_SIZE, worldHeight = CANVAS_WORKSPACE_SIZE;
- const position = (event: React.PointerEvent) => { const bounds = root.current!.getBoundingClientRect(); return { x: (event.clientX-bounds.left)*worldWidth/bounds.width-CANVAS_WORKSPACE_MARGIN, y: (event.clientY-bounds.top)*worldHeight/bounds.height-CANVAS_WORKSPACE_MARGIN }; };
- const active = doc.nodes.find(node => node.id === selected && !node.hidden);
- const replace = (node: CanvasNode) => onChange({ ...doc, nodes: doc.nodes.map(item => item.id === node.id ? node : item) });
- return <div ref={root} data-testid="manual-canvas" style={{ width:worldWidth,height:worldHeight,position:'relative',background:'transparent',touchAction:'none',userSelect:'none',WebkitUserSelect:'none',cursor:tool==='text'?'text':tool==='select'?'default':tool==='hand'?'grab':'crosshair',overflow:'visible' }} onPointerDown={event=>{
-  if(disabled || tool==='hand' || editing || event.button!==0)return;
-  const point=position(event); const target=(event.target as Element).closest('[data-node-id]'); const id=target?.getAttribute('data-node-id'); const node=doc.nodes.find(item=>item.id===id);
-  if(node?.flow&&tool==='select'){onSelect(node.id);event.stopPropagation();return;}
-  if(tool==='select'){lastPressedId.current=node?.id||'';onSelect(node?.id||'');if(node){onCommit();action.current={kind:(event.target as Element).getAttribute('data-resize')?'resize':'move',...point,node:structuredClone(node),initial:doc};}else return;}
-  else {onCommit();const type=tool as CanvasNode['type'];const created:CanvasNode={id:crypto.randomUUID(),type,positionMode:'absolute',name:type.charAt(0).toUpperCase()+type.slice(1)+' '+(doc.nodes.length+1),x:point.x,y:point.y,width:type==='text'?400:type==='frame'&&framePreset?framePreset.width:1,height:type==='text'?180:type==='frame'&&framePreset?framePreset.height:1,fill:type==='text'?'#202b38':type==='frame'?'#ffffff':'#a9c6ee',stroke:'#4d76af',strokeWidth:type==='frame'||type==='line'||type==='path'?2:0,radius:0,opacity:1,text:type==='text'?'Your text':'',fontSize:32,fontWeight:400,...(type==='path'?{points:[0,0]}:{})};onChange({...doc,nodes:[...doc.nodes,created]});onSelect(created.id);if(type==='text'||(type==='frame'&&framePreset)){return;}action.current={kind:'create',...point,node:created,initial:{...doc,nodes:[...doc.nodes,created]}};}
-  event.currentTarget.setPointerCapture(event.pointerId);event.stopPropagation();
- }} onPointerMove={event=>{
-  const current=action.current;if(!current)return;const point=position(event),dx=point.x-current.x,dy=point.y-current.y;let node={...current.node};
-  node.positionMode='absolute';if(current.kind==='move'){node.x+=dx;node.y+=dy;}else if(current.kind==='resize'){node.width=Math.max(8,node.width+dx);node.height=Math.max(8,node.height+dy);}else if(node.type==='path'){node.points=[...(node.points||[]),dx,dy];current.node=node;node.width=Math.max(1,Math.abs(dx));node.height=Math.max(1,Math.abs(dy));}else{node.x=Math.min(current.x,point.x);node.y=Math.min(current.y,point.y);node.width=Math.max(1,Math.abs(dx));node.height=Math.max(1,Math.abs(dy));}
-  const parent=containingFrame(node,current.initial.nodes);if(parent)node.parentId=parent.id;else delete node.parentId;
-  onChange({...current.initial,nodes:current.initial.nodes.map(item=>item.id===node.id?node:item)});event.stopPropagation();
- }} onPointerUp={()=>{action.current=null;}} onPointerCancel={()=>{action.current=null;}} onDoubleClick={event=>{if(disabled||tool!=='select')return;const id=(event.target as Element).closest('[data-node-id]')?.getAttribute('data-node-id')||lastPressedId.current;const node=doc.nodes.find(item=>item.id===id);if(node?.type!=='text')return;onCommit();setEditing(id);requestAnimationFrame(()=>root.current?.querySelector<HTMLElement>('[contenteditable=\"true\"]')?.focus());event.preventDefault();event.stopPropagation();}}>
-  <svg width={worldWidth} height={worldHeight} viewBox={`0 0 ${worldWidth} ${worldHeight}`} style={{position:'absolute',inset:0,overflow:'visible'}} aria-label="Canvas shapes"><defs>{doc.nodes.filter(node=>node.type==='frame').map(frame=><clipPath key={frame.id} id={`clip-${frame.id}`}><rect x={frame.x+CANVAS_WORKSPACE_MARGIN} y={frame.y+CANVAS_WORKSPACE_MARGIN} width={frame.width} height={frame.height} rx={frame.radius}/></clipPath>)}{doc.nodes.filter(node=>node.type==='image'&&!node.flow).map(image=>{const parent=doc.nodes.find(item=>item.id===image.parentId&&item.type==='frame')||containingFrame(image,doc.nodes);return <clipPath key={`image-${image.id}`} id={`image-${image.id}`}><rect x={image.x+CANVAS_WORKSPACE_MARGIN} y={image.y+CANVAS_WORKSPACE_MARGIN} width={image.width} height={image.height} rx={image.radius} clipPath={parent?`url(#clip-${parent.id})`:undefined}/></clipPath>;})}</defs>{[...doc.nodes.filter(node=>!node.flow&&node.type==='frame'),...doc.nodes.filter(node=>!node.flow&&node.type!=='frame')].map(node=>{
-   const offset=CANVAS_WORKSPACE_MARGIN;
-   const parentFrame=doc.nodes.find(item=>item.id===node.parentId&&item.type==='frame')||containingFrame(node,doc.nodes);
-   const isHidden=node.hidden||parentFrame?.hidden;
-   const props={'data-node-id':node.id,fill:node.fill,stroke:node.stroke,strokeWidth:node.strokeWidth,opacity:isHidden?0:node.opacity,visibility:isHidden?'hidden':undefined,...(parentFrame?{'clipPath':`url(#clip-${parentFrame.id})`}:{})};
-   if(node.type==='text')return <foreignObject key={node.id} data-node-id={node.id} x={node.x+offset} y={node.y+offset} width={node.width} height={node.height} visibility={isHidden?'hidden':undefined} opacity={isHidden?0:node.opacity} clipPath={parentFrame?`url(#clip-${parentFrame.id})`:undefined}><div data-node-id={node.id} contentEditable={editing===node.id} suppressContentEditableWarning role={editing===node.id?'textbox':undefined} aria-label={editing===node.id?'Edit text layer':undefined} onBlur={event=>{if(editing===node.id){replace({...node,text:event.currentTarget.textContent||''});setEditing('');}}} onKeyDown={event=>{if(event.key==='Escape')event.currentTarget.blur();event.stopPropagation();}} style={{...canvasTextStyle(node),width:'100%',height:'100%',display:'flex',alignItems:node.verticalAlign==='middle'?'center':node.verticalAlign==='bottom'?'flex-end':'flex-start',boxSizing:'border-box',outline:editing===node.id?'2px solid #386650':'none',overflow:'hidden',userSelect:editing===node.id?'text':'none',WebkitUserSelect:editing===node.id?'text':'none',cursor:editing===node.id?'text':'inherit'}}><span style={{width:'100%'}}>{node.text}</span></div></foreignObject>;
-   if(node.type==='image')return <image key={node.id} data-node-id={node.id} x={node.x+offset} y={node.y+offset} width={node.width} height={node.height} href={canvasAssetUrl(projectId,node.assetId!)} preserveAspectRatio={`xMidYMid ${node.imageFit==='contain'?'meet':'slice'}`} style={{borderRadius:node.radius}} opacity={isHidden?0:node.opacity} visibility={isHidden?'hidden':undefined} clipPath={`url(#image-${node.id})`}/>;
-   if(node.type==='icon')return <image key={node.id} data-node-id={node.id} x={node.x+offset} y={node.y+offset} width={node.width} height={node.height} href={canvasIconUrl(node.iconName!,node.fill,node.strokeWidth)} preserveAspectRatio="xMidYMid meet" opacity={isHidden?0:node.opacity} visibility={isHidden?'hidden':undefined} clipPath={parentFrame?`url(#clip-${parentFrame.id})`:undefined}/>;
-   if(node.type==='ellipse')return <ellipse key={node.id} {...props} cx={node.x+offset+node.width/2} cy={node.y+offset+node.height/2} rx={node.width/2} ry={node.height/2}/>;
-   if(node.type==='line')return <line key={node.id} {...props} x1={node.x+offset} y1={node.y+offset} x2={node.x+offset+node.width} y2={node.y+offset+node.height}/>;
-   if(node.type==='path')return <polyline key={node.id} {...props} fill="none" strokeLinecap="round" strokeLinejoin="round" points={(node.points||[]).map((point,index)=>point+(index%2?node.y+offset:node.x+offset)).join(' ')}/>;
-   return <rect key={node.id} {...props} x={node.x+offset} y={node.y+offset} width={node.width} height={node.height} rx={node.radius}/>;
-  })}</svg>
-  <AutoLayoutSurface document={doc} projectId={projectId} selected={selected} onSelect={onSelect} onChange={onChange} onCommit={onCommit} disabled={disabled} hand={tool==='hand'} selecting={tool==='select'}/>
-  {active&&!active.flow&&tool==='select'&&!editing&&<div data-node-id={active.id} style={{position:'absolute',pointerEvents:'none',left:active.x+CANVAS_WORKSPACE_MARGIN,top:active.y+CANVAS_WORKSPACE_MARGIN,width:active.width,height:active.height,border:'1.5px solid #386650'}}><div data-node-id={active.id} data-resize="true" aria-label="Resize selected layer" style={{position:'absolute',right:-5,bottom:-5,width:9,height:9,background:'#fff',border:'1.5px solid #386650',pointerEvents:'auto',cursor:'nwse-resize'}}/></div>}
+
+type Gesture = {
+ kind:'move'|'resize'|'create'; pointerId:number; parent:HTMLElement; start:{x:number;y:number};
+ client:{x:number;y:number}; node:CanvasNode; initial:CanvasDocument; original:CanvasDocument;
+ selection:string; started:boolean; tool:CanvasTool; points:number[];
+};
+const bounded=(node:CanvasNode):CanvasNode=>({...node,x:Math.round(Math.max(-20000,Math.min(20000,node.x))),y:Math.round(Math.max(-20000,Math.min(20000,node.y))),width:Math.round(Math.max(1,Math.min(20000,node.width))),height:Math.round(Math.max(1,Math.min(20000,node.height)))});
+
+export function CanvasSurface({document:doc,projectId,tool,selected,onSelect,onChange,onCommit,onToolChange,onGeometryChange,disabled,framePreset,agentCursor}:{document:CanvasDocument;projectId:string;tool:CanvasTool;selected:string;onSelect:(id:string)=>void;onChange:(doc:CanvasDocument)=>void;onCommit:()=>void;onToolChange:(tool:CanvasTool)=>void;onGeometryChange?:(geometry:NodeGeometry|null)=>void;disabled:boolean;framePreset?:{width:number;height:number}|null;agentCursor?:{role:AgentRole;nodeIds:string[]}}) {
+ const root=useRef<HTMLDivElement>(null);
+ const action=useRef<Gesture|null>(null);
+ const lastPressedId=useRef('');
+ const [editing,setEditing]=useState('');
+ const [preview,setPreview]=useState<CanvasNode|null>(null);
+ const [selectionBounds,setSelectionBounds]=useState<NodeGeometry|null>(null);
+ const [cursorPosition,setCursorPosition]=useState<{x:number;y:number}|null>(null);
+ const cancel=()=>{
+  const current=action.current;if(!current)return;
+  action.current=null;setPreview(null);
+  if(current.started&&current.kind!=='create')onChange(current.original);
+  onSelect(current.selection);
+  if(current.kind==='create')onToolChange('select');
+  if(root.current?.hasPointerCapture(current.pointerId))root.current.releasePointerCapture(current.pointerId);
+ };
+ useEffect(()=>{const escape=(event:KeyboardEvent)=>{if(event.key==='Escape'){if(editing){if(root.current)canvasElement(root.current,editing)?.blur();setEditing('');window.getSelection()?.removeAllRanges();}else cancel();}};window.addEventListener('keydown',escape);return()=>window.removeEventListener('keydown',escape);});
+ useEffect(()=>{if(action.current&&(disabled||tool!==action.current.tool))cancel();},[disabled,tool]);
+ useLayoutEffect(()=>{if(editing&&root.current)canvasElement(root.current,editing)?.focus();},[editing]);
+ useLayoutEffect(()=>{
+  const node=doc.nodes.find(item=>item.id===selected),element=root.current;
+  if(!node||node.hidden||!element){onGeometryChange?.(null);setSelectionBounds(null);return;}
+  const measure=()=>{
+   onGeometryChange?.(measureCanvasNode(element,node));
+   const target=canvasElement(element,node.id);if(!target)return;
+   if(getComputedStyle(target).visibility==='hidden'){setSelectionBounds(null);return;}
+   const rect=target.getBoundingClientRect(),workspace=element.getBoundingClientRect(),scale=workspace.width/CANVAS_WORKSPACE_SIZE;
+   const next={x:(rect.left-workspace.left)/scale,y:(rect.top-workspace.top)/scale,width:rect.width/scale,height:rect.height/scale};
+   setSelectionBounds(previous=>previous&&Object.keys(next).every(key=>previous[key as keyof NodeGeometry]===next[key as keyof NodeGeometry])?previous:next);
+  };
+  measure();const observer=new ResizeObserver(measure),target=canvasElement(element,node.id);
+  if(target)element.querySelectorAll('[data-node-id]').forEach(item=>observer.observe(item));
+  return()=>observer.disconnect();
+ },[doc,selected,onGeometryChange]);
+ useLayoutEffect(()=>{
+  const element=root.current;
+  const targets=(agentCursor?.nodeIds||[]).map(id=>doc.nodes.find(node=>node.id===id)).filter((node):node is CanvasNode=>!!node&&!node.hidden);
+  if(!element){setCursorPosition(null);return;}
+  if(!targets.length){setCursorPosition({x:CANVAS_WORKSPACE_SIZE/2,y:CANVAS_WORKSPACE_SIZE/2});return;}
+  const measure=()=>{
+   const target=targets.map(node=>canvasElement(element,node.id)).find(Boolean);
+   if(!target){setCursorPosition({x:CANVAS_WORKSPACE_SIZE/2,y:CANVAS_WORKSPACE_SIZE/2});return;}
+   const rect=target.getBoundingClientRect(),workspace=element.getBoundingClientRect(),scale=workspace.width/CANVAS_WORKSPACE_SIZE;
+   setCursorPosition({x:(rect.left-workspace.left)/scale,y:(rect.top-workspace.top)/scale});
+  };
+  measure();const observer=new ResizeObserver(measure);element.querySelectorAll('[data-node-id]').forEach(item=>observer.observe(item));
+  return()=>observer.disconnect();
+ },[agentCursor,doc]);
+
+ const update=(event:PointerEvent<HTMLDivElement>,final=false)=>{
+  const current=action.current;if(!current||event.pointerId!==current.pointerId||!root.current)return null;
+  const point=localPointer(root.current,current.parent,event.clientX,event.clientY);
+  const dx=point.x-current.start.x,dy=point.y-current.start.y;
+  const moved=Math.hypot(event.clientX-current.client.x,event.clientY-current.client.y)>2;
+  if(!current.started&&!moved&&current.kind!=='create')return null;
+  let node=current.node;
+  if(current.kind==='move')node=absoluteNode(node,{x:node.x+dx,y:node.y+dy,width:node.width,height:node.height});
+  else if(current.kind==='resize')node=absoluteNode(node,{x:node.x,y:node.y,width:node.width+dx,height:node.height+dy});
+  else if(node.type==='path'){
+   current.points.push(point.x,point.y);
+   const xs=current.points.filter((_,i)=>i%2===0),ys=current.points.filter((_,i)=>i%2===1),x=Math.min(...xs),y=Math.min(...ys);
+   node={...node,x,y,width:Math.max(...xs)-x,height:Math.max(...ys)-y,points:current.points.map((value,i)=>value-(i%2?y:x)).slice(0,2000)};
+  }else node={...node,...drawingBounds(current.start,point)};
+  if(current.kind==='create'){
+   if(final&&!moved){
+    if(node.type==='text')node={...node,width:400,height:180};
+    else if(node.type==='frame'&&framePreset)node={...node,...framePreset};
+    else return null;
+   }
+   if(final&&(node.width<1||node.height<1)&&!['line','path'].includes(node.type))return null;
+   setPreview(final?null:node);
+  }else{
+  if(!current.started){onCommit();current.started=true;}
+   node=bounded(node);
+  let nodes=current.initial.nodes.map(item=>item.id===node.id?node:item);
+  // Absolute children leave flex sizing. Freeze their immediate Auto Layout parent
+  // at its measured box before removing the child from flow, or HUG parents collapse.
+  if(current.kind==='move'&&node.parentId){
+   const parent=current.initial.nodes.find(item=>item.id===node.parentId);
+   if(parent?.flow&&parent.layout&&parent.positionMode!=='absolute'&&root.current){
+    const size=measureCanvasNode(root.current,parent);
+    nodes=nodes.map(item=>item.id===parent.id?{...item,width:Math.round(size.width),height:Math.round(size.height),sizing:{...item.sizing,width:'fixed',height:'fixed'}}:item);
+   }
+  }
+  onChange({...current.initial,nodes});
+  }
+  return final?bounded(node):node;
+ };
+ const down=(event:PointerEvent<HTMLDivElement>)=>{
+  if(action.current){if(event.pointerId!==action.current.pointerId)cancel();return;}
+  if(disabled||tool==='hand'||event.button!==0||!event.isPrimary)return;
+  const target=event.target as Element;
+  if(target.closest('[contenteditable="true"]'))return;
+  const workspace=root.current!,initial=normalizeCanvasPositions(doc);
+  const hit=target.closest<HTMLElement>('[data-node-id]');
+  const node=initial.nodes.find(item=>item.id===(target.closest('[data-resize-node]')?.getAttribute('data-resize-node')||hit?.dataset.nodeId));
+  let parent=workspace.querySelector<HTMLElement>('[data-testid="auto-layout-root"]')!;
+  let chosen:CanvasNode,kind:Gesture['kind'];
+  if(tool==='select'){
+   lastPressedId.current=node?.id||'';onSelect(node?.id||'');if(!node)return;
+   parent=canvasElement(workspace,node.id)!.parentElement!;
+   chosen={...node,...measureCanvasNode(workspace,node)};
+   kind=target.closest('[data-resize]')?'resize':'move';
+  }else{
+   let container=node;
+   while(container&&!['container','frame'].includes(container.type))container=initial.nodes.find(item=>item.id===container?.parentId);
+   if(container)parent=canvasElement(workspace,container.id)!;
+   const point=localPointer(workspace,parent,event.clientX,event.clientY);
+   chosen=createCanvasNode(tool,crypto.randomUUID(),{positionMode:'absolute',parentId:container?.id,...point,width:0,height:0,name:`${tool.charAt(0).toUpperCase()+tool.slice(1)} ${doc.nodes.length+1}`});
+   kind='create';setPreview(chosen);
+  }
+  const start=localPointer(workspace,parent,event.clientX,event.clientY);
+  action.current={kind,pointerId:event.pointerId,parent,start,client:{x:event.clientX,y:event.clientY},node:chosen,initial,original:doc,selection:selected,started:false,tool,points:[start.x,start.y]};
+  // Capture on the stable workspace, never on a node whose position/layout may change.
+  workspace.setPointerCapture(event.pointerId);event.stopPropagation();
+ };
+ const up=(event:PointerEvent<HTMLDivElement>)=>{
+  const current=action.current;if(!current||current.pointerId!==event.pointerId)return;
+  const node=update(event,true);
+  action.current=null;setPreview(null);
+  if(current.kind==='create'){
+   if(node){onCommit();onChange({...current.initial,nodes:[...current.initial.nodes,node]});onSelect(node.id);}
+   onToolChange('select');
+  }
+  if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId);
+  event.stopPropagation();
+ };
+ const display=preview?{...normalizeCanvasPositions(doc),nodes:[...normalizeCanvasPositions(doc).nodes,preview]}:doc;
+ return <div ref={root} data-testid="manual-canvas" className={!['select','hand','text'].includes(tool)?'cursor-crosshair':undefined} style={{width:CANVAS_WORKSPACE_SIZE,height:CANVAS_WORKSPACE_SIZE,position:'relative',touchAction:'none',userSelect:'none',WebkitUserSelect:'none',cursor:tool==='text'?'text':tool==='select'?'default':tool==='hand'?'grab':'crosshair',overflow:'visible'}}
+  onDoubleClick={event=>{
+   if(disabled||tool!=='select')return;
+   const id=(event.target as Element).closest<HTMLElement>('[data-node-id]')?.dataset.nodeId||lastPressedId.current;
+   if(doc.nodes.find(node=>node.id===id)?.type!=='text')return;
+   onCommit();setEditing(id);
+   event.preventDefault();event.stopPropagation();
+  }}
+  onPointerDown={down} onPointerMove={event=>{if(action.current?.pointerId===event.pointerId){update(event);event.stopPropagation();}}} onPointerUp={up} onPointerCancel={cancel} onLostPointerCapture={cancel}>
+  <AutoLayoutSurface document={display} projectId={projectId} onChange={onChange} editing={editing} onEditingChange={setEditing}/>
+  {agentCursor&&cursorPosition&&<div data-agent-cursor={agentCursor.role} aria-label={`${agentIdentity[agentCursor.role].persona} is working on the canvas`} style={{position:'absolute',left:cursorPosition.x,top:cursorPosition.y,zIndex:10,pointerEvents:'none',display:'flex',alignItems:'center',gap:6,transform:'translate(-7px,-8px)',filter:'drop-shadow(0 2px 5px #17211e30)'}}><svg width="18" height="22" viewBox="0 0 18 22" aria-hidden="true" style={{flex:'none'}}><path d="M2 1.5 16 12l-6.1.9 3.2 6.1-2.5 1.3-3.2-6.2-4.4 4.1Z" fill={agentIdentity[agentCursor.role].color} stroke="white" strokeWidth="1.5" strokeLinejoin="round"/></svg><span style={{display:'inline-flex',alignItems:'center',gap:5,padding:'3px 8px 3px 4px',borderRadius:999,background:'white',border:`1px solid ${agentIdentity[agentCursor.role].color}55`,color:'#263238',font:'600 11px/1.2 system-ui,sans-serif',whiteSpace:'nowrap'}}><AgentMark role={agentCursor.role} size={20}/>{agentIdentity[agentCursor.role].persona}</span></div>}
+  {selectionBounds&&selected&&tool==='select'&&!disabled&&!editing&&<div data-selection-overlay="true" style={{position:'absolute',pointerEvents:'none',left:selectionBounds.x,top:selectionBounds.y,width:selectionBounds.width,height:selectionBounds.height,outline:'1px solid #4d76af',outlineOffset:2,zIndex:2}}>
+   <span data-resize="true" data-resize-node={selected} aria-label="Resize selected layer" style={{position:'absolute',right:-7,bottom:-7,width:9,height:9,boxSizing:'border-box',background:'#fff',border:'1px solid #4d76af',pointerEvents:'auto',cursor:'nwse-resize'}}/>
+  </div>}
  </div>;
 }

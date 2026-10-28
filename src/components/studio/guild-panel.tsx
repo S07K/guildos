@@ -35,6 +35,7 @@ export function GuildPanel({ projectId, versionId, layers: layerOptions = [], ad
  const [taskWaits, setTaskWaits] = useState<WaitingMessage[]>([]);
  const [reviewFeedback, setReviewFeedback] = useState<ReviewFeedback|null>(null);
  const [composerContext, setComposerContext] = useState(selectedContext);
+ const [targetLayerId, setTargetLayerId] = useState<string|null>(selectedContext?.id||null);
  const [error, setError] = useState('');
  const [saving, setSaving] = useState(false);
  const pendingMessage = useRef<{payload:string;requestId:string}|null>(null);
@@ -68,14 +69,14 @@ export function GuildPanel({ projectId, versionId, layers: layerOptions = [], ad
    }
   }).catch(cause => { if (!cancelled&&!hasLoaded) setError(cause instanceof Error ? cause.message : 'Could not load the project conversation.'); });
   void load();
-  const interval = window.setInterval(() => void load(), 5000);
+  const interval = window.setInterval(() => void load(), 2500);
   return () => { cancelled = true; window.clearInterval(interval); };
  }, [projectId]);
  useEffect(() => { if (addedNotes.length) setNotes(items => [...items.filter(item => !addedNotes.some(added => added.id === item.id)), ...addedNotes].sort((a,b) => a.created_at.localeCompare(b.created_at))); }, [addedNotes]);
  useEffect(() => { if (feedRef.current) feedRef.current.scrollTop = feedRef.current.scrollHeight; }, [notes.length]);
  useEffect(() => { setActiveSuggestionIndex(0); }, [mentionQuery, layerQuery]);
  useEffect(() => { activeOptionRef.current?.scrollIntoView({ block: 'nearest' }); }, [activeSuggestionIndex]);
- useLayoutEffect(() => { setComposerContext(selectedContext); }, [selectedContext?.id, selectedContext?.name]);
+ useLayoutEffect(() => { setComposerContext(selectedContext); setTargetLayerId(selectedContext?.id||null); }, [selectedContext?.id, selectedContext?.name]);
  useLayoutEffect(() => {
   const textarea = inputRef.current;
   const overlay = textOverlayRef.current;
@@ -93,11 +94,19 @@ export function GuildPanel({ projectId, versionId, layers: layerOptions = [], ad
  }, []);
 
  function requestChanges(feedback: ReviewFeedback) {
-  setReviewFeedback(feedback); setComposerContext(null); setText('');
+  setReviewFeedback(feedback); setComposerContext(null); setTargetLayerId(feedback.instruction.match(/\u2063guildos-layer:([a-z0-9-]{1,80})\u2063/i)?.[1]||null); setText('');
   requestAnimationFrame(() => inputRef.current?.focus());
+ }
+ function resolveLayerMention(value:string) {
+  return layerOptions.flatMap(layer=>[layer.name,layer.name.replace(/\s+/g,'_'),layer.id].map(label=>({id:layer.id,label})))
+   .map(layer=>({id:layer.id,index:value.toLowerCase().lastIndexOf(`#${layer.label.toLowerCase()}`),length:layer.label.length}))
+   .filter(layer=>layer.index>=0&&!/[\p{L}\p{N}_-]/u.test(value[layer.index+layer.length+1]||''))
+   .sort((a,b)=>b.index-a.index||b.length-a.length||Number(b.id===targetLayerId)-Number(a.id===targetLayerId))[0]?.id;
  }
  function updateText(value: string, position: number) {
   setText(value); setCaret(position);
+  const mentionedLayer=resolveLayerMention(value);
+  if(mentionedLayer)setTargetLayerId(mentionedLayer);
   const beforeCaret = value.slice(0, position);
   const agentToken = beforeCaret.match(mentionPattern);
   const layerToken = beforeCaret.match(layerMentionPattern);
@@ -112,12 +121,12 @@ export function GuildPanel({ projectId, versionId, layers: layerOptions = [], ad
   setText(inserted); setCaret(nextCaret); setMentionQuery(null); setLayerQuery(null);
   requestAnimationFrame(() => { inputRef.current?.focus(); inputRef.current?.setSelectionRange(nextCaret, nextCaret); });
  }
- function insertLayer(name: string) {
+ function insertLayer(id:string,name: string) {
   const before = text.slice(0, caret).replace(layerMentionPattern, '$1');
   const after = text.slice(caret);
   const inserted = `${before}#${name} ${after}`;
   const nextCaret = before.length + name.length + 2;
-  setText(inserted); setCaret(nextCaret); setMentionQuery(null); setLayerQuery(null);
+  setText(inserted); setCaret(nextCaret); setTargetLayerId(id); setMentionQuery(null); setLayerQuery(null);
   requestAnimationFrame(() => { inputRef.current?.focus(); inputRef.current?.setSelectionRange(nextCaret, nextCaret); });
  }
  async function submit() {
@@ -125,10 +134,12 @@ export function GuildPanel({ projectId, versionId, layers: layerOptions = [], ad
   if (!draftMessage || saving || sending.current) return;
   const contextPrefix = reviewFeedback ? `Revise the completed work for: ${reviewFeedback.instruction.slice(0,500)}\nRequested changes: ` : composerContext ? `#${composerContext.name} ` : '';
   const message = `${contextPrefix}${draftMessage}`.slice(0, 2000);
+  const layerMentions=layerOptions.flatMap(layer=>[layer.name,layer.name.replace(/\s+/g,'_'),layer.id].map(label=>({id:layer.id,label}))).sort((a,b)=>b.label.length-a.label.length);
+  const explicitLayer=layerMentions.flatMap(layer=>{const index=message.lastIndexOf(`#${layer.label}`),end=message[index+layer.label.length+1]||'';return index>=0&&!/[\p{L}\p{N}_-]/u.test(end)?[{id:layer.id,index}]:[];}).sort((a,b)=>b.index-a.index)[0]?.id;
   const mention = agentRoles.find(role => new RegExp(`@${agentIdentity[role].persona}\\b`, 'i').test(message)) || null;
   sending.current = true; setSaving(true); setError('');
   try {
-   const payload = JSON.stringify({ projectId, versionId: reviewFeedback?.versionId || versionId, anchor: 'page', mentionedRole: mention, text: message });
+   const payload = JSON.stringify({ projectId, versionId: reviewFeedback?.versionId || versionId, anchor: 'page', mentionedRole: mention, targetLayerId:targetLayerId||explicitLayer, text: message });
    if (pendingMessage.current?.payload !== payload) pendingMessage.current = {payload,requestId:crypto.randomUUID()};
    const response = await fetch('/api/studio/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({...JSON.parse(payload),requestId:pendingMessage.current.requestId}) });
    const data = await conversationData(response);
@@ -173,12 +184,12 @@ export function GuildPanel({ projectId, versionId, layers: layerOptions = [], ad
    <AgentWorkingIndicator roles={workingAgents}/>
    <Box sx={{ position: 'relative', p: 1.25, border: '1px solid #dfe6e1', borderRadius: '8px', bgcolor: 'background.paper', transition: 'border-color 120ms ease, box-shadow 120ms ease', '&:focus-within': { borderColor: '#789783', boxShadow: '0 0 0 3px rgba(56,102,80,.08)' } }}>
     <Box sx={{ minWidth: 0, position: 'relative', px: 1, py: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
-     {(suggestions.length > 0 || layerSuggestions.length > 0) && <Paper role="listbox" aria-label={mentionQuery !== null ? 'Mention an agent' : 'Mention a layer'} sx={{ ...dropdownSurfaceSx, position: 'absolute', zIndex: 4, bottom: 'calc(100% + 12px)', left: 0, right: 0, boxSizing: 'border-box', maxHeight: 260, overflowX: 'hidden', overflowY: 'auto', p: .5 }}>{suggestions.map((role, index) => <Button key={role} ref={index === activeSuggestionIndex ? activeOptionRef : undefined} role="option" aria-selected={index === activeSuggestionIndex} onClick={() => insertMention(role)} fullWidth sx={{ minWidth: 0, justifyContent: 'flex-start', textTransform: 'none', color: 'text.primary', px: 1, py: .75, textAlign: 'left', bgcolor: index === activeSuggestionIndex ? '#f0f4f1' : 'transparent', '&:hover': { bgcolor: '#f0f4f1' } }}><Box sx={{ flex: 'none', lineHeight: 0 }}><AgentMark role={role} size={30}/></Box><Box sx={{ ml: 1, minWidth: 0, textAlign: 'left' }}><Typography variant="body2" noWrap sx={{ fontWeight: 700, lineHeight: 1.2 }}>{agentIdentity[role].persona}</Typography><Typography variant="caption" noWrap color="text.secondary">{agentIdentity[role].name}</Typography></Box></Button>)}{layerSuggestions.map((item, index) => <Button key={item.id} ref={index === activeSuggestionIndex ? activeOptionRef : undefined} role="option" aria-selected={index === activeSuggestionIndex} onClick={() => insertLayer(item.name)} fullWidth sx={{ minWidth: 0, justifyContent: 'flex-start', textTransform: 'none', color: 'text.primary', px: 1, py: .75, textAlign: 'left', bgcolor: index === activeSuggestionIndex ? '#f0f4f1' : 'transparent', '&:hover': { bgcolor: '#f0f4f1' } }}><Box sx={{ width: 30, height: 30, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: 1, bgcolor: '#eef3ef', color: 'primary.main' }}><Hash size={16}/></Box><Box sx={{ ml: 1, minWidth: 0, textAlign: 'left' }}><Typography variant="body2" noWrap sx={{ fontWeight: 650, lineHeight: 1.2 }}>{item.name}</Typography><Typography variant="caption" noWrap color="text.secondary">Layer</Typography></Box></Button>)}</Paper>}
+     {(suggestions.length > 0 || layerSuggestions.length > 0) && <Paper role="listbox" aria-label={mentionQuery !== null ? 'Mention an agent' : 'Mention a layer'} sx={{ ...dropdownSurfaceSx, position: 'absolute', zIndex: 4, bottom: 'calc(100% + 12px)', left: 0, right: 0, boxSizing: 'border-box', maxHeight: 260, overflowX: 'hidden', overflowY: 'auto', p: .5 }}>{suggestions.map((role, index) => <Button key={role} ref={index === activeSuggestionIndex ? activeOptionRef : undefined} role="option" aria-selected={index === activeSuggestionIndex} onClick={() => insertMention(role)} fullWidth sx={{ minWidth: 0, justifyContent: 'flex-start', textTransform: 'none', color: 'text.primary', px: 1, py: .75, textAlign: 'left', bgcolor: index === activeSuggestionIndex ? '#f0f4f1' : 'transparent', '&:hover': { bgcolor: '#f0f4f1' } }}><Box sx={{ flex: 'none', lineHeight: 0 }}><AgentMark role={role} size={30}/></Box><Box sx={{ ml: 1, minWidth: 0, textAlign: 'left' }}><Typography variant="body2" noWrap sx={{ fontWeight: 700, lineHeight: 1.2 }}>{agentIdentity[role].persona}</Typography><Typography variant="caption" noWrap color="text.secondary">{agentIdentity[role].name}</Typography></Box></Button>)}{layerSuggestions.map((item, index) => <Button key={item.id} ref={index === activeSuggestionIndex ? activeOptionRef : undefined} role="option" aria-selected={index === activeSuggestionIndex} onClick={() => insertLayer(item.id,item.name)} fullWidth sx={{ minWidth: 0, justifyContent: 'flex-start', textTransform: 'none', color: 'text.primary', px: 1, py: .75, textAlign: 'left', bgcolor: index === activeSuggestionIndex ? '#f0f4f1' : 'transparent', '&:hover': { bgcolor: '#f0f4f1' } }}><Box sx={{ width: 30, height: 30, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: 1, bgcolor: '#eef3ef', color: 'primary.main' }}><Hash size={16}/></Box><Box sx={{ ml: 1, minWidth: 0, textAlign: 'left' }}><Typography variant="body2" noWrap sx={{ fontWeight: 650, lineHeight: 1.2 }}>{item.name}</Typography><Typography variant="caption" noWrap color="text.secondary">Layer</Typography></Box></Button>)}</Paper>}
      {reviewFeedback && <Stack spacing={.5} sx={{minWidth:0}}><Chip size="small" label="Request changes" onDelete={()=>setReviewFeedback(null)} sx={{alignSelf:'flex-start'}}/><Typography variant="caption" color="text.secondary" sx={{overflowWrap:'anywhere'}}>What would you like changed?</Typography></Stack>}
      {composerContext && <Chip size="small" icon={<Hash size={14}/>} label={composerContext.name} onDelete={() => setComposerContext(null)} deleteIcon={<X size={14}/>} sx={{ alignSelf: 'flex-start', height: 26, borderRadius: '6px', bgcolor: '#3b496b', color: '#9bc8f2', '& .MuiChip-icon': { color: 'inherit', ml: .75 }, '& .MuiChip-deleteIcon': { color: 'inherit', mr: .5, '&:hover': { color: '#fff' } } }}/>}
      <Box sx={{ minWidth: 0, position: 'relative' }}>
       <Box ref={textOverlayRef} aria-hidden="true" sx={{ position: 'absolute', zIndex: 1, inset: 0, overflow: 'hidden', whiteSpace: 'pre-wrap', overflowWrap: 'break-word', wordBreak: 'break-word', pointerEvents: 'none', color: 'text.primary' }}>{highlightedMessage}</Box>
-      <TextField inputRef={inputRef} fullWidth multiline minRows={3} maxRows={6} value={text} onChange={event => updateText(event.target.value, event.target.selectionStart || 0)} onScroll={event => { if (textOverlayRef.current) textOverlayRef.current.scrollTop = event.currentTarget.scrollTop; }} onClick={() => setCaret(inputRef.current?.selectionStart || 0)} onKeyUp={() => setCaret(inputRef.current?.selectionStart || 0)} onKeyDown={event => { const count = mentionQuery !== null ? suggestions.length : layerQuery !== null ? layerSuggestions.length : 0; if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && count > 0) { event.preventDefault(); setActiveSuggestionIndex(index => (index + (event.key === 'ArrowDown' ? 1 : -1) + count) % count); return; } if (event.key === 'Enter' && !event.shiftKey) { if (mentionQuery !== null) { if (suggestions[activeSuggestionIndex]) { event.preventDefault(); insertMention(suggestions[activeSuggestionIndex]); } } else if (layerQuery !== null) { if (layerSuggestions[activeSuggestionIndex]) { event.preventDefault(); insertLayer(layerSuggestions[activeSuggestionIndex].name); } } else { event.preventDefault(); void submit(); } } if (event.key === 'Escape') { setMentionQuery(null); setLayerQuery(null); } }} placeholder="Ask for changes… Use @ for agents and # for layers" size="small" slotProps={{ htmlInput: { maxLength: 2000, 'aria-label': 'Message the project guild', style: { padding: 0 } } }} sx={{ position: 'relative', zIndex: 2, '& .MuiOutlinedInput-root': { alignItems: 'flex-start', borderRadius: 0, bgcolor: 'transparent', p: 0, '& fieldset': { border: 0 }, '&:hover fieldset': { border: 0 }, '&.Mui-focused fieldset': { border: 0 } }, '& textarea:not(:placeholder-shown)': { color: 'transparent !important', WebkitTextFillColor: 'transparent !important', caretColor: '#202b38' }, '& textarea::placeholder': { color: '#9ba4ac', opacity: 1 }, '& .MuiInputBase-inputMultiline': { p: 0, lineHeight: 1.5 } }}/>
+      <TextField inputRef={inputRef} fullWidth multiline minRows={3} maxRows={6} value={text} onChange={event => updateText(event.target.value, event.target.selectionStart || 0)} onScroll={event => { if (textOverlayRef.current) textOverlayRef.current.scrollTop = event.currentTarget.scrollTop; }} onClick={() => setCaret(inputRef.current?.selectionStart || 0)} onKeyUp={() => setCaret(inputRef.current?.selectionStart || 0)} onKeyDown={event => { const count = mentionQuery !== null ? suggestions.length : layerQuery !== null ? layerSuggestions.length : 0; if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && count > 0) { event.preventDefault(); setActiveSuggestionIndex(index => (index + (event.key === 'ArrowDown' ? 1 : -1) + count) % count); return; } if (event.key === 'Enter' && !event.shiftKey) { if (mentionQuery !== null) { if (suggestions[activeSuggestionIndex]) { event.preventDefault(); insertMention(suggestions[activeSuggestionIndex]); } } else if (layerQuery !== null) { if (layerSuggestions[activeSuggestionIndex]) { event.preventDefault(); insertLayer(layerSuggestions[activeSuggestionIndex].id,layerSuggestions[activeSuggestionIndex].name); } } else { event.preventDefault(); void submit(); } } if (event.key === 'Escape') { setMentionQuery(null); setLayerQuery(null); } }} placeholder="Ask for changes… Use @ for agents and # for layers" size="small" slotProps={{ htmlInput: { maxLength: 2000, 'aria-label': 'Message the project guild', style: { padding: 0 } } }} sx={{ position: 'relative', zIndex: 2, '& .MuiOutlinedInput-root': { alignItems: 'flex-start', borderRadius: 0, bgcolor: 'transparent', p: 0, '& fieldset': { border: 0 }, '&:hover fieldset': { border: 0 }, '&.Mui-focused fieldset': { border: 0 } }, '& textarea:not(:placeholder-shown)': { color: 'transparent !important', WebkitTextFillColor: 'transparent !important', caretColor: '#202b38' }, '& textarea::placeholder': { color: '#9ba4ac', opacity: 1 }, '& .MuiInputBase-inputMultiline': { p: 0, lineHeight: 1.5 } }}/>
      </Box>
     </Box>
     <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'flex-end', mt: .5, minWidth: 0 }}>

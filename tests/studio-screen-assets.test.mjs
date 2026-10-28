@@ -19,7 +19,7 @@ const modelResult=value=>Response.json({status:'completed',usage:{input_tokens:1
 test('screen roots use full viewport catalogs and floating agent widgets are rejected',()=>{
  const result=validateProposal(proposal(complete),blankCanvas());
  const screen=result.document.nodes[0];assert.equal(screen.width,375);assert.equal(screen.height,812);assert.equal(screen.screen,true);assert.equal(screen.sizing.width,'fixed');assert.equal(screen.sizing.height,'hug-contents');
- assert.equal(flowNodeStyle(screen).minHeight,812);assert.equal(flowNodeStyle(screen).height,'auto');assert.equal(flowNodeStyle(screen).width,375);
+ assert.equal(flowNodeStyle(screen).minHeight,812);assert.equal(flowNodeStyle(screen).height,812);assert.equal(flowNodeStyle(screen).width,375);
  const desktop=componentToCanvas(node('desktop','container',null,{screenPreset:'desktop'}));assert.equal(desktop.width,1440);assert.equal(canvasToComponent(desktop).properties.screenPreset,'desktop');
  assert.deepEqual(screenCompositionIssues(result.document),[]);
  for(const type of ['text','button','icon'])assert.throws(()=>validateProposal(proposal([node('floating',type,null,{text:type==='icon'?'':'Floating',iconName:type==='icon'?'search':null})]),blankCanvas()),/Screen Frame/);
@@ -45,7 +45,7 @@ test('verified CDN imagery preserves attribution and query parameters across edi
  const result=validateProposal(data,blankCanvas(),[photo]);
  const image=result.document.nodes[3];assert.equal(image.imageSource.photographer,photo.photographer);assert.equal(image.imageUrl,photo.imageUrl);
  assert.equal(canvasToComponent(image).properties.imageUrl,photo.imageUrl);
- const html=renderCanvas(result.document,'Lunch');assert.match(html,/Photo by/);assert.match(html,/Test Photographer/);assert.match(html,/ixid=preserve-me&amp;w=1080/);assert.match(html,/img-src 'self' https:\/\/images.unsplash.com/);
+ const html=renderCanvas(result.document,'Lunch');assert.match(html,/<meta name="guildos:image-attribution" content="Photo by Test Photographer"/);assert.ok(html.includes(`data-photographer-profile="${photo.profileUrl.replaceAll("&", "&amp;")}"`));assert.doesNotMatch(html,/>Photo by Test Photographer</);assert.match(html,/ixid=preserve-me&amp;w=1080/);assert.match(html,/img-src 'self' https:\/\/images.unsplash.com/);
  assert.equal(validateCanvas(result.document),result.document);
  assert.throws(()=>validateCanvas({...result.document,nodes:result.document.nodes.map(node=>node.id==='photo'?{...node,imageSource:undefined}:node)}),/verified Unsplash/);
  for(const url of ['https://evil.test/photo-123','http://images.unsplash.com/photo-123','https://images.unsplash.com.evil.test/photo-123','https://user@images.unsplash.com/photo-123','https://images.unsplash.com:444/photo-123','data:image/svg+xml,x'])assert.equal(isUnsplashImageUrl(url),false);

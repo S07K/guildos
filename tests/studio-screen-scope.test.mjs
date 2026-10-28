@@ -6,6 +6,7 @@ import {validateProposal,proposeCanvasWork,auditPipeline} from '../src/lib/studi
 import {initialPipeline,rejectOrApprove} from '../src/lib/studio/agents/pipeline.ts';
 import {activeScreenId,screenScopeInstruction} from '../src/lib/studio/screen-scope.ts';
 import {normalizeUiIconName,uiIconNames} from '../src/lib/studio/ui-icons.ts';
+import {canvasQualityIssues} from '../src/lib/studio/canvas-quality.ts';
 import {renderIconSvg} from '../src/lib/studio/icon-library.ts';
 import {flowNodeStyle} from '../src/lib/studio/canvas-layout.ts';
 import {taskDisplay} from '../src/lib/studio/task-display.ts';
@@ -47,14 +48,29 @@ test('pipeline, specialist and QA keep one target even with other screens presen
  assert.equal(taskDisplay({instruction:screenScopeInstruction('home','Current action: Refine the title')}).title,'Refine the title');
 });
 
-test('icon dictionary uses installed canonical UI keys and rejects arbitrary symbols and mismatched meanings',()=>{
+test('icon dictionary rejects invalid symbols but treats inferred meanings as advisory',()=>{
  for(const name of uiIconNames)assert.match(renderIconSvg(name),/<svg/);
  assert.equal(normalizeUiIconName('Bag'),'ShoppingBag');assert.equal(normalizeUiIconName('Sliders'),'SlidersHorizontal');
  assert.equal(normalizeUiIconName('/'),undefined);assert.equal(normalizeUiIconName('Worm'),undefined);
  for(const raw of [node('bad','icon','screen',{iconName:'/'}),node('bad','icon','screen',{iconName:'Search',text:'/'}),node('bad','text','screen',{text:'/'})])assert.throws(()=>validateProposal(edit([node('screen'),raw]),blankCanvas()),/icon|Lucide/);
- assert.throws(()=>validateProposal(edit([node('screen'),node('back','button','screen',{text:'Go back',iconName:'ArrowRight'})]),blankCanvas()),/ChevronLeft/);
+ const back=validateProposal(edit([node('screen'),node('back','button','screen',{text:'Go back',iconName:'ArrowRight'})]),blankCanvas());
+ assert.ok(canvasQualityIssues(back.document).some(issue=>issue.key==='icon-meaning:back'&&issue.severity==='warning'&&issue.message.includes('ChevronLeft')));
  const row={...node('row','container','screen',{alignItems:'center'}),layoutMode:'HORIZONTAL',itemSpacing:8};
- assert.throws(()=>validateProposal(edit([node('screen'),row,node('glyph','icon','row',{iconName:'Heart'}),node('label','text','row',{text:'Search'})]),blankCanvas()),/Search/);
+ const search=validateProposal(edit([node('screen'),row,node('glyph','icon','row',{iconName:'Heart'}),node('label','text','row',{text:'Search'})]),blankCanvas());
+ assert.ok(canvasQualityIssues(search.document).some(issue=>issue.key==='icon-meaning:glyph'&&issue.severity==='warning'&&issue.message.includes('Search')));
+});
+
+test('rating icon hints do not reject or retry an otherwise valid agent edit',async()=>{
+ const changes=edit([node('screen'),node('rating','button','screen',{name:'Rating details',text:'View ratings',iconName:'ArrowRight'})]);
+ let calls=0;
+ const result=await proposeCanvasWork({key:'test',model:'test',role:'ui_designer',instruction:'Add rating details',brief:'Food app',document:blankCanvas(),notes:[],images:[],requireEdits:true},async()=>{calls++;return response(changes);});
+ assert.equal(calls,1);
+ assert.equal(result.document.nodes.find(item=>item.id==='rating').iconName,'ArrowRight');
+ const warning=canvasQualityIssues(result.document).find(issue=>issue.key==='icon-meaning:rating');
+ assert.equal(warning.severity,'warning');
+ assert.match(warning.message,/Rating details.*rating.*ArrowRight.*Star/);
+ const matching=validateProposal(edit([node('screen'),node('rating','button','screen',{text:'Rating',iconName:'Star'})]),blankCanvas());
+ assert.ok(!canvasQualityIssues(matching.document).some(issue=>issue.key==='icon-meaning:rating'));
 });
 
 test('icons have fixed inline-flex boxes, rows have 8px gaps and icon buttons export matching alignment and insets',()=>{
@@ -63,9 +79,9 @@ test('icons have fixed inline-flex boxes, rows have 8px gaps and icon buttons ex
  const icon=result.document.nodes.find(item=>item.id==='search-icon'),button=result.document.nodes.find(item=>item.id==='back');
  assert.equal(icon.width,16);assert.equal(icon.height,16);assert.equal(flowNodeStyle(icon).display,'inline-flex');
  assert.equal(button.layout.direction,'row');assert.equal(button.layout.alignItems,'center');assert.equal(button.layout.gap,8);
- assert.equal(flowNodeStyle(button).padding,'12px 16px');
+ assert.equal(flowNodeStyle(button).padding,'4px 0');
  const html=renderCanvas(result.document,'Scoped screen');
- assert.match(html,/data-icon-wrapper="true"/);assert.match(html,/display:inline-flex;width:20px;height:20px/);assert.match(html,/padding:12px 16px/);assert.match(html,/data-icon-label="true">Back/);
+ assert.match(html,/data-icon-wrapper="true"/);assert.match(html,/display:inline-flex;width:18px;height:18px/);assert.match(html,/padding:4px 0/);assert.match(html,/data-icon-label="true">Back/);
  const control=node('filter','button','screen',{text:'Filter',iconName:'SlidersHorizontal'});
  assert.throws(()=>validateProposal(edit([node('screen'),{...control,layoutMode:'VERTICAL'}]),blankCanvas()),/HORIZONTAL/);
  assert.throws(()=>validateProposal(edit([node('screen'),node('raw','icon','screen',{iconName:'Search'})]),blankCanvas()),/icon\/text row/);

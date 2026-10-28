@@ -8,7 +8,7 @@ export type CanvasCommand =
  | { type: 'delete'; id: string }
  | { type: 'reorder'; ids: string[] }
  | { type: 'document'; patch: Partial<Pick<CanvasDocument, 'width' | 'height' | 'background'>> };
-const nodeKeys = ['screen','imageUrl','imageSource','designSystem','contentPadding','textColor','backgroundColor','name','x','y','width','height','fill','stroke','strokeWidth','radius','opacity','text','fontSize','fontWeight','textAlign','verticalAlign','lineHeight','letterSpacing','assetId','imageFit','iconName','points','hidden','parentId','flow','layout','sizing','layoutMode','primaryAxisSizingMode','counterAxisSizingMode','itemSpacing','properties','direction','gap','padding','alignItems','justifyContent'];
+const nodeKeys = ['variant','positionMode','screen','imageUrl','imageSource','designSystem','contentPadding','textColor','backgroundColor','name','x','y','width','height','fill','stroke','strokeWidth','radius','opacity','text','fontSize','fontWeight','textAlign','verticalAlign','lineHeight','letterSpacing','assetId','imageFit','iconName','points','hidden','parentId','flow','layout','sizing','layoutMode','primaryAxisSizingMode','counterAxisSizingMode','itemSpacing','properties','direction','gap','padding','alignItems','justifyContent'];
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 function keys(value: Record<string, unknown>, allowed: string[]) {
  if (Object.keys(value).some(key => !allowed.includes(key))) throw new Error('Unknown canvas command field.');
@@ -26,6 +26,7 @@ export function applyCanvasCommands(document: CanvasDocument, commands: unknown)
     if (!object(command.node)) throw new Error('Invalid canvas layer.');
     keys(command.node, ['id','type',...nodeKeys]);
     const nodeId = command.node.id;
+    if(typeof nodeId==='string'&&next.deletedIds?.includes(nodeId))throw new Error('This layer was manually deleted and cannot be restored by a generation command.');
     if (next.nodes.some(node => node.id === nodeId)) throw new Error('Layer already exists.');
     const component='properties' in command.node||'layoutMode' in command.node||'primaryAxisSizingMode' in command.node||!('width' in command.node)&&!('x' in command.node);
     next.nodes.push(component?componentToCanvas(command.node):normalizeFlowFields(structuredClone(command.node)) as CanvasNode);
@@ -41,9 +42,11 @@ export function applyCanvasCommands(document: CanvasDocument, commands: unknown)
     if(component){
      const previous=canvasToComponent(node);
      const updated=componentToCanvas({...previous,...command.patch,properties:{...previous.properties,...(command.patch.properties as object||{})}});
+     if(node.positionMode==='absolute'&&!('positionMode' in command.patch))Object.assign(updated,{positionMode:'absolute',x:node.x,y:node.y,width:node.width,height:node.height});
      if(updated.imageUrl===node.imageUrl&&node.imageSource)updated.imageSource=node.imageSource;
      if(!updated.screen)delete node.screen;
-     if(updated.type==='text'||updated.type==='icon')delete node.backgroundColor;
+     const properties=command.patch.properties as Record<string,unknown>|undefined;
+     if(updated.type==='text'||updated.type==='icon'||properties&&'backgroundColor' in properties&&(properties.backgroundColor===null||properties.backgroundColor===''))delete node.backgroundColor;
      if(!updated.imageUrl){delete node.imageUrl;delete node.imageSource;}
      if(!updated.assetId)delete node.assetId;
      if(!updated.iconName)delete node.iconName;
@@ -52,6 +55,7 @@ export function applyCanvasCommands(document: CanvasDocument, commands: unknown)
     // null is an explicit detach operation over JSON; undefined cannot be sent.
     if(command.patch.parentId&&node.screen)delete node.screen;
     if('imageUrl' in command.patch&&command.patch.imageUrl===undefined){delete node.imageUrl;delete node.imageSource;}
+    if('iconName' in command.patch&&!command.patch.iconName)delete node.iconName;
     if (command.patch.parentId === null) delete node.parentId;
     break;
    }
@@ -80,6 +84,7 @@ export function applyCanvasCommands(document: CanvasDocument, commands: unknown)
    default: throw new Error('Unknown canvas command.');
   }
  }
+ for(const node of next.nodes)if(['button','container'].includes(node.type)&&next.nodes.some(child=>child.parentId===node.id&&child.type==='icon'))delete node.iconName;
  // Resolve a FILL/HUG cycle deterministically rather than depending on browser guesses.
  for(let pass=0;pass<32;pass++){
   let changed=false;

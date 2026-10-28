@@ -16,5 +16,5 @@ export function semanticIconIssue(icon:string,label:string):string|undefined {
   [/\b(ratings?|reviews? score)\b/i,['Star']], [/\b(back|go back|navigate back)\b/i,['ChevronLeft']], [/\b(filters?|filter controls)\b/i,['SlidersHorizontal']],
  ];
  const rule=rules.find(([pattern])=>pattern.test(label));
- return rule&&!rule[1].includes(icon)?`Use ${rule[1].join(' or ')} for this UI meaning.`:undefined;
+ return rule&&!rule[1].includes(icon)?`Consider ${rule[1].join(' or ')} if this icon represents “${label.match(rule[0])?.[0]}”.`:undefined;
 }

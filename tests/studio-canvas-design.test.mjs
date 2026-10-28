@@ -13,7 +13,7 @@ test('canvas text and private image layers validate and render',()=>{
  const html=renderCanvas(doc,'Preview',projectId);
  assert.match(html,/text-align:center/);assert.match(html,/align-items:center/);assert.match(html,/letter-spacing:1.5px/);
  assert.match(html,new RegExp(`/api/studio/assets/${assetId}\\?projectId=${projectId}`));
- assert.match(html,/xMidYMid meet/);
+ assert.match(html,/object-fit:contain/);
  assert.throws(()=>validateCanvas({...doc,nodes:[{...doc.nodes[1],assetId:'not-a-uuid'}]}));
 });
 
