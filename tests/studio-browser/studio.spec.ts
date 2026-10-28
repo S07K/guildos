@@ -59,10 +59,10 @@ test('sign-in, project conversation, encrypted key settings and dashboard', asyn
  await expect(page.getByLabel('Replace your API key')).toHaveValue('');
  await page.getByRole('button', { name: 'Close key dialog' }).click();
  await page.goto('/studio');
- await expect(page.locator('.project-tile')).toHaveCount(1);
+ await expect(page.locator('.project-tile').filter({ hasText: 'Cove creative studio' })).toHaveCount(1);
  await page.getByRole('link', { name: 'Projects', exact: true }).click();
  await expect(page.getByRole('heading', { name: 'Your projects' })).toBeVisible();
- await expect(page.locator('.project-tile')).toHaveCount(1);
+ await expect(page.locator('.project-tile').filter({ hasText: 'Cove creative studio' })).toHaveCount(1);
  await page.getByRole('link', { name: 'Usage & costs', exact: true }).click();
  await expect(page.getByRole('heading', { name: 'Usage & costs', exact: true })).toBeVisible();
  await expect(page.getByRole('table')).toContainText('Cove creative studio');
@@ -111,7 +111,7 @@ test('manual canvas draws and persists a layer without a provider key', async ({
  await page.reload();
  await expect(page.getByTestId('manual-canvas').locator('[data-node-type="rectangle"]')).toHaveCount(1);
  // The viewport is re-centered after reload; select the persisted layer by name.
- await page.getByRole('button', { name: 'Hero panel Toggle visibility Hero panel', exact: true }).click();
+ await page.getByLabel('Toggle visibility Hero panel').locator('xpath=..').click();
  await expect(page.getByLabel('Layer name')).toHaveValue('Hero panel');
  await page.getByLabel('Layer name').fill('My unsaved edit');
  // A peer commits while this tab holds an older revision.
@@ -253,7 +253,8 @@ test('nested auto layout expands for copy changes and narrower screens',async({p
  const canvas=page.getByTestId('manual-canvas');
  const paragraph=canvas.locator('[data-auto-layout][data-node-id="Paragraph"]');
  const actions=canvas.locator('[data-auto-layout][data-node-id="Actions"]');
- await expect(canvas.locator('[data-node-id="Screen"][data-auto-layout]')).toHaveCSS('padding','16px');
+ await expect(canvas.locator('[data-node-id="Screen"][data-auto-layout]')).toHaveCSS('padding-top','16px');
+ await expect(canvas.locator('[data-node-id="Screen"][data-auto-layout]')).toHaveCSS('padding-bottom','0px');
  await expect(actions).toHaveCSS('gap','16px');
  await expect(canvas.locator('[data-node-id="One"][data-auto-layout]')).toHaveCSS('border-radius','8px');
  await expect(canvas.getByRole('textbox',{name:'Search',exact:true})).toHaveAttribute('readonly','');
@@ -533,7 +534,8 @@ test('screen frames grow around real imagery, long copy and Lucide button icons'
  const screen=page.getByTestId('auto-layout-root').locator('[data-node-id="screen"]');
  await expect(screen).toHaveCSS('width','375px');
  await expect(screen).toHaveCSS('min-height','812px');
- await expect(screen.getByText('Test Photographer',{exact:true})).toBeVisible();
+ await expect(screen.getByRole('img',{name:'A fresh lunch bowl'})).toBeVisible();
+ await expect(screen.getByText('Test Photographer',{exact:true})).toHaveCount(0);
  await expect(screen.getByRole('button',{name:'Order lunch'}).locator('img')).toHaveAttribute('src',/icons\/ShoppingBag/);
  const iconButton=screen.getByRole('button',{name:'Order lunch'});
  await expect(iconButton).toHaveCSS('flex-direction','row');await expect(iconButton).toHaveCSS('align-items','center');await expect(iconButton).toHaveCSS('justify-content','center');await expect(iconButton).toHaveCSS('gap','8px');
