@@ -43,7 +43,7 @@ test('QA cannot approve pre-existing contrast or missing flex issues and preserv
 test('pipeline reports a missing layoutMode back to the same agent before staging it',async()=>{
  let calls=0;
  const initial=initialPipeline(blankCanvas(),'Create the home screen',null);
- const valid=node('screen','container');
+ const valid=node(initial.targetScreenId,'container');
  const result=await proposeCanvasWork({key:'test',model:'test',role:'ux_architect',instruction:'Build',brief:'A home screen',document:initial.document,notes:[],pipeline:initial},async(_url,options)=>{
   const body=JSON.parse(options.body);calls++;
   if(calls===2)assert.match(body.instructions,/requires an explicit layoutMode/);

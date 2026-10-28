@@ -34,7 +34,7 @@ function providerFailure(response:Response,provider:AgentProvider,details:Failur
  }
  if(response.status===413)return failure(`${providerName} cannot fit this canvas request within its request or token-per-minute limit (${status}). Reduce the action scope or use another connected provider.`,false,true);
  if([401,403].includes(response.status))return failure(`${providerName} rejected this connection (${status}). Reconnect it in Connections.`,false,true);
- if(response.status===404||/model_not_found|model_decommissioned/.test(code))return failure(`${providerName} could not access the configured model or endpoint (${status}). Update the connection or use another provider.`,false,true);
+ if(response.status===404||/model_not_found|model_decommissioned/.test(code))return failure(`${providerName} could not access the configured model or endpoint (${status}). GuildOS will try another connected provider; update the connection if the error persists.`,false,true);
  if(/context_length_exceeded|prompt_too_long/.test(code))return failure(`${providerName} cannot fit the current project context (${status}). Use a smaller action or a model with a larger context window.`,false,true);
  if(/json_validate_failed|tool_use_failed|model_output_invalid/.test(code)||response.status===422)return failure(`${providerName} could not generate valid structured output (${status}). No canvas changes were saved.`,true,true);
  if([400,415].includes(response.status)){

@@ -10,11 +10,13 @@ import { isTaskFetchCancelled } from '@/lib/studio/task-fetch';
 
 export type WaitingMessage = {noteId:string;wait:TaskWait};
 type Task = { source_note_id?:string; wait?:TaskWait|null; id:string; parent_task_id:string|null; project_id:string; agent_role:AgentRole; instruction:string; status:string; summary:string; error:string; result_version_id:string|null; created_at:string; updated_at?:string };
+type TaskEvent = {id:number;task_id:string;kind:'status'|'handoff'|'result'|'error';speaker_role:AgentRole|null;recipient_role:AgentRole|null;body:string;created_at:string};
 export type ReviewFeedback = { instruction:string; summary:string; versionId:string|null };
 
 export function AgentProgress({projectId,onRequestChanges,onTaskWaits,onWorkingAgents,revisionNotes=[],conversationLoaded=true}:{onWorkingAgents?:(roles:AgentRole[])=>void;onTaskWaits?:(waits:WaitingMessage[])=>void;revisionNotes?:readonly {author_role:string;body:string;created_at:string}[];conversationLoaded?:boolean;projectId:string;onRequestChanges?:(feedback:ReviewFeedback)=>void}) {
  const containerRef=useRef<HTMLDivElement>(null);
  const [tasks,setTasks]=useState<Task[]>([]);
+ const [events,setEvents]=useState<TaskEvent[]>([]);
  const [error,setError]=useState('');
  const [pending,setPending]=useState<string|null>(null);
  const [approved,setApproved]=useState<Set<string>>(new Set());
@@ -30,7 +32,7 @@ export function AgentProgress({projectId,onRequestChanges,onTaskWaits,onWorkingA
    if(task.status!=='queued'||task.error!=='Waiting for workspace model capacity or daily budget.')return task;
    const waiting=(data.events||[]).filter((event:{task_id:string;body:string})=>event.task_id===task.id&&event.body.includes('daily GuildOS model request limit')).at(-1);
    return waiting?{...task,error:'Daily workspace request limit reached. This task will resume when the limit resets.'}:task;
-  }));setError('');
+  }));setEvents(Array.isArray(data.events)?data.events:[]);setError('');
   if(nearBottom&&feed)requestAnimationFrame(()=>{if(feed.isConnected)feed.scrollTop=feed.scrollHeight;});
  },[projectId]);
  useEffect(()=>{
@@ -40,7 +42,14 @@ export function AgentProgress({projectId,onRequestChanges,onTaskWaits,onWorkingA
   void poll();window.addEventListener('guildos:tasks-updated',refresh);
   return()=>{controller.abort();clearTimeout(timer);window.removeEventListener('guildos:tasks-updated',refresh);};
  },[load]);
- useEffect(()=>{onWorkingAgents?.(error?[]:[...new Set(tasks.filter(task=>task.status==='running').map(task=>task.agent_role))]);},[tasks,error,onWorkingAgents]);
+ useEffect(()=>{
+  if(error){onWorkingAgents?.([]);return;}
+  // Task.agent_role is the original assignee. The sequential pipeline changes
+  // specialists, so use the latest live status event for each running task.
+  const currentRole=new Map<string,AgentRole>();
+  for(const event of events)if(event.kind==='status'&&event.speaker_role)currentRole.set(event.task_id,event.speaker_role);
+  onWorkingAgents?.([...new Set(tasks.filter(task=>task.status==='running').map(task=>currentRole.get(task.id)||task.agent_role))]);
+ },[tasks,events,error,onWorkingAgents]);
  useEffect(()=>{onTaskWaits?.(tasks.flatMap(task=>task.source_note_id&&task.status==='queued'&&task.wait?[{noteId:task.source_note_id,wait:task.wait}]:[]));},[tasks,onTaskWaits]);
  async function action(task:Task,action:'approve'|'retry'|'cancel') {
   if(submitting.current)return;

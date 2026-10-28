@@ -1,8 +1,10 @@
+import { inSubtree, isRevisionRequest, requestedChanges, resolveLayerReference, resolveRevisionScope, assertRevisionScope, type RevisionScope } from '../revision-scope.ts';
+import { sanitizeVisualHierarchy } from '../visual-hierarchy.ts';
 import { isDeepStrictEqual } from 'node:util';
 import type { CanvasDocument, CanvasNode } from '../canvas.ts';
 import type { CanvasCommand } from '../canvas-commands.ts';
 import type { AgentRole } from '../agent-roles.ts';
-import { activeScreenId, screenDocument, validateScreenEdits } from '../screen-scope.ts';
+import { activeScreenId, screenDocument, screenRoot, validateScreenEdits } from '../screen-scope.ts';
 import { componentQualityIssues, screenCompositionIssues } from '../canvas-quality.ts';
 
 export class PipelineGateError extends Error {}
@@ -11,24 +13,32 @@ export const pipelineRoles = ['ux_architect','creative_director','ui_designer','
 export type PipelineIssue = {agent_role:AgentRole;message:string};
 export type PipelineState = {
  stage:number;action:number;round:number;targetScreenId:string;baseVersionId:string|null;
- document:CanvasDocument;commands:CanvasCommand[];issues:PipelineIssue[];
+ document:CanvasDocument;commands:CanvasCommand[];issues:PipelineIssue[];focusNodeIds?:string[];newScreenTransition?:boolean; executionMode?:'SURGICAL_REVISION'|'CREATE_NEW_SCREEN'|'EDIT_SCREEN'; revisionScope?:RevisionScope; targetLayerId?:string;
 };
 export const stageInstructions = [
- 'Create ONLY the active mobile screen root and nested structural containers/grid. Set the root width to 375px using screenPreset mobile. Root height may HUG or use flexible sizing with an 812px minimum. Do not create text, images, icons or controls. Preserve existing content. Leave theme styling for the next stage.',
+ 'Create ONLY the active mobile screen root and nested structural containers/grid. If active_screen_id is not already in current_canvas, create a new root with that exact ID and preserve every existing root frame unchanged as an archived screen. Never recycle or modify an old screen root to create the requested screen. Set the root width to 375px using screenPreset mobile. Root height may HUG or use flexible sizing with an 812px minimum. Do not create text, images, icons or controls. Preserve existing content. Leave theme styling for the next stage.',
  'Style existing structural containers with theme colors, background fills, borders and surface radii. Do not create/delete nodes, change layout, or write text.',
  'Populate the structure with functional components, verified Unsplash assets and valid Lucide icons in atomic flex rows. Preserve the root screen. Supply provisional meaningful labels; the next stage refines copy.',
  'Refine text on existing text, button and input nodes only. Do not create/delete nodes or alter styling, layout, images or icons.',
  'Audit only. Never edit the document. Report every problem with its responsible specialist.',
 ] as const;
-export function initialPipeline(document:CanvasDocument,instruction:string,baseVersionId:string|null):PipelineState {
- return {stage:0,action:0,round:0,targetScreenId:activeScreenId(document,instruction)||'screen',baseVersionId,document,commands:[],issues:[]};
+export function initialPipeline(document:CanvasDocument,instruction:string,baseVersionId:string|null,isRevision=false):PipelineState {
+ const revision=isRevisionRequest(instruction,isRevision);
+ const mentionedLayerId=resolveLayerReference(document,instruction);
+ const targetScreenId=(mentionedLayerId?screenRoot(document,mentionedLayerId)?.id:undefined)||activeScreenId(document,isRevision?`Requested changes: ${instruction}`:instruction)||'screen';
+ const targetLayerId=resolveLayerReference(document,instruction,targetScreenId);
+ if(requestedChanges(instruction).match(/\u2063guildos-layer:([a-z0-9-]{1,80})\u2063/i)&&!targetLayerId)throw new Error('The referenced layer is no longer on this canvas. Select it again before sending the request.');
+ const matchedScope=revision&&!targetLayerId&&screenRoot(document,targetScreenId)?resolveRevisionScope(document,targetScreenId,instruction):undefined;
+ const revisionScope=screenRoot(document,targetScreenId)&&(targetLayerId||matchedScope)?{rootId:targetScreenId,sectionId:targetLayerId||matchedScope!.sectionId,snapshot:structuredClone(document),allowSectionDelete:!!targetLayerId&&/\b(remove|delete)\b/i.test(instruction)}:undefined;
+ return {executionMode:revision?'SURGICAL_REVISION':!screenRoot(document,targetScreenId)?'CREATE_NEW_SCREEN':'EDIT_SCREEN',revisionScope,targetLayerId,stage:0,action:0,round:0,targetScreenId,baseVersionId,document,commands:[],issues:[],newScreenTransition:!screenRoot(document,targetScreenId)};
 }
 const changedKeys=(a:CanvasNode,b:CanvasNode)=>Object.keys({...a,...b}).filter(key=>!isDeepStrictEqual(a[key as keyof CanvasNode],b[key as keyof CanvasNode]));
 export function validateStageEdit(state:PipelineState,after:CanvasDocument) {
+ if(state.revisionScope)assertRevisionScope(state.revisionScope,after);
  const before=new Map(state.document.nodes.map(node=>[node.id,node]));
  const next=new Map(after.nodes.map(node=>[node.id,node]));
  const changed=[...new Set([...before.keys(),...next.keys()])].filter(id=>!isDeepStrictEqual(before.get(id),next.get(id)));
- validateScreenEdits(state.document,after,changed,state.targetScreenId);
+ validateScreenEdits(state.document,after,changed,state.targetScreenId,!screenRoot(state.document,state.targetScreenId));
  if(after.background!==state.document.background||after.width!==state.document.width||after.height!==state.document.height)throw new Error('The workspace outside the locked screen is read-only.');
  for(const id of changed){
   const old=before.get(id),node=next.get(id);
@@ -58,15 +68,20 @@ export function pipelineIssues(state:PipelineState):PipelineIssue[] {
   if(node.type==='container'&&!['row','column'].includes(node.layout?.direction||''))issues.push({key:`layout:${node.id}`,message:`“${node.name}” requires an explicit horizontal or vertical flex direction.`});
  }
 
- return issues.map(issue=>{const node=scoped.nodes.find(node=>issue.key.split(':').includes(node.id));return {agent_role:issue.key==='single-screen'||issue.key.startsWith('mobile-screen:')||node?.type==='container'&&!issue.key.startsWith('screen-content:')?'ux_architect':'ui_designer',message:issue.message};});
+ const relevant=state.revisionScope?issues.filter(issue=>scoped.nodes.some(node=>node.id!==state.targetScreenId&&inSubtree(scoped,node.id,state.revisionScope!.sectionId)&&issue.key.split(':').includes(node.id))):issues;
+ return relevant.map(issue=>{const node=scoped.nodes.find(node=>issue.key.split(':').includes(node.id));return {agent_role:issue.key==='single-screen'||issue.key.startsWith('mobile-screen:')||node?.type==='container'&&!issue.key.startsWith('screen-content:')&&!issue.key.startsWith('menu-')?'ux_architect':'ui_designer',message:issue.message};});
 }
 export function advanceDraft(state:PipelineState,result:{document:CanvasDocument;commands:CanvasCommand[];stageComplete?:boolean}):PipelineState {
  validateStageEdit(state,result.document);
  if(!result.stageComplete&&state.action>=14)throw new PipelineGateError('This stage exceeded fifteen actions. The private draft was not published.');
- return {...state,document:result.document,commands:[...state.commands,...result.commands],stage:state.stage+(result.stageComplete?1:0),action:result.stageComplete?0:state.action+1};
+ const document=sanitizeVisualHierarchy(result.document,state.targetScreenId,state.revisionScope);
+ if(state.revisionScope)assertRevisionScope(state.revisionScope,document);
+ return {...state,document,commands:[...state.commands,...result.commands],stage:state.stage+(result.stageComplete?1:0),action:result.stageComplete?0:state.action+1};
 }
 export function rejectOrApprove(state:PipelineState,reported:PipelineIssue[]):PipelineState {
  if(state.stage!==4)throw new Error('Only the final QA stage can approve a turn.');
+ state={...state,document:sanitizeVisualHierarchy(state.document,state.targetScreenId,state.revisionScope)};
+ if(state.revisionScope)assertRevisionScope(state.revisionScope,state.document);
  // Model findings and deterministic checks both need a responsible correction stage.
  const issues=[...pipelineIssues(state),...reported.filter(issue=>pipelineRoles.slice(0,4).includes(issue.agent_role)&&typeof issue.message==='string'&&!!issue.message.trim())];
  if(!issues.length)return {...state,stage:5,issues:[]};

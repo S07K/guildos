@@ -1,8 +1,8 @@
+import { assertRevisionScope } from '../revision-scope.ts';
 import { randomUUID } from 'node:crypto';
 import { providerPriority } from '../provider-fallback.ts';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { blankCanvas, isCanvas } from '../canvas.ts';
-import { sanitizeCanvasLayout } from '../canvas-quality.ts';
 import { canvasQualityIssues } from '../canvas-quality.ts';
 import { screenDocument } from '../screen-scope.ts';
 import { openKey } from '../vault.mjs';
@@ -113,15 +113,27 @@ export async function runNextTask(client:SupabaseClient, propose=proposeCanvasWo
   const recordedModel=(value:string)=>active.provider==='openrouter'?(value.startsWith('openrouter/')?value:`openrouter/${value}`):active.provider==='groq'?(value.startsWith('groq/')?value:`groq/${value}`):active.chatgptPlan?`chatgpt/${value}`:value;
   const loaded=await client.from('studio_pipeline_drafts').select('state').eq('task_id',task.id).eq('workspace_id',task.workspace_id).maybeSingle();
   if(loaded.error)throw new Error('Could not load the private pipeline draft. Apply the sequential pipeline migration.');
+  const requestedState=initialPipeline(document,task.instruction,version?.id||null);
   let state:PipelineState;
-  if(loaded.data)state=loaded.data.state;
+  if(loaded.data){
+   state=loaded.data.state;
+   if(state.targetScreenId!==requestedState.targetScreenId){
+    const reset=await client.rpc('reset_studio_pipeline_scope',{p_task:task.id,p_token:token,p_state:requestedState});
+    if(reset.error)throw new Error('Could not reset the stale private screen scope. Apply the screen-scope reset migration.');
+    if(reset.data?.status==='stale')return true;
+    if(!['reset','unchanged'].includes(reset.data?.status)||!reset.data?.state)throw new Error('Could not reset the stale private screen scope.');
+    state=reset.data.state;
+   }
+  }
   else {
-   const initialized=await client.rpc('init_studio_pipeline',{p_task:task.id,p_token:token,p_state:initialPipeline(document,task.instruction,version?.id||null)});
+   const initialized=await client.rpc('init_studio_pipeline',{p_task:task.id,p_token:token,p_state:requestedState});
    if(initialized.error)throw new Error('Could not initialize the private pipeline draft.');
    if(initialized.data?.status==='stale')return true;
    state=initialized.data.state;
   }
+  if(requestedState.revisionScope&&!state.revisionScope)state={...state,executionMode:requestedState.executionMode,targetLayerId:requestedState.targetLayerId,revisionScope:requestedState.revisionScope,newScreenTransition:false};
   const publish=async()=>{
+   if(state.revisionScope)assertRevisionScope(state.revisionScope,state.document);
    const saved=await finish({mode:'edit',summary:'The single-screen design passed all five pipeline stages and is ready for review.',document:state.document,commands:state.commands,expectedVersionId:state.baseVersionId,model:recordedModel(active.model),input_tokens:0,output_tokens:0});
    await event(saved?.status==='review'?'result':'error',saved?.status==='review'?'The complete screen is ready for review.':'The canvas changed while the draft was prepared; the draft was not published.');
   };
@@ -130,11 +142,11 @@ export async function runNextTask(client:SupabaseClient, propose=proposeCanvasWo
   const completedStage=state.stage+1;
   const stageStarted=Date.now();
   devWorkerLog('stage_started',{task:task.id.slice(0,8),stage:completedStage,action:state.action+1,role:stageRole,round:state.round+1});
-  await event('status',`Stage ${state.stage+1}/5 · ${agentIdentity[stageRole].persona}: ${stageInstructions[state.stage]}`);
+  await event('status',`Working on: ${agentIdentity[stageRole].action}.`);
   let next:PipelineState;
   let usage:{model:string;input_tokens:number;output_tokens:number;summary:string};
   if(state.stage===4){
-   state={...state,document:sanitizeCanvasLayout(state.document)};
+   // Final deterministic sanitation and snapshot checks run in rejectOrApprove.
    try {
     const auditResult=await withProviderFallback(connection=>audit({...connection,brief:projectResult.data!.brief,instruction:task.instruction,state,signal:abort.signal},connection.request));
     next=rejectOrApprove(state,auditResult.issues);usage=auditResult;
@@ -147,12 +159,17 @@ export async function runNextTask(client:SupabaseClient, propose=proposeCanvasWo
    const feedbackTickets=canvasQualityIssues(screenDocument(state.document,state.targetScreenId)).map(issue=>issue.message);
    const result=await withProviderFallback(connection=>propose({...connection,role:stageRole,targetScreenId:state.targetScreenId,instruction:task.instruction,brief:projectResult.data!.brief,document:state.document,notes:[...(notesResult.data||[])].reverse(),signal:abort.signal,pipeline:state,feedbackTickets,onProgress:message=>event('status',message)},connection.request));
    next=advanceDraft(state,result);usage=result;
+   const focused=result.commands.flatMap(command=>command.type==='create'?[command.node.id]:command.type==='update'||command.type==='delete'?[command.id]:command.type==='reorder'?command.ids:[]);
+   next.focusNodeIds=next.stage===state.stage
+    ? [...new Set(focused)].filter(id=>next.document.nodes.some(node=>node.id===id)).slice(0,3)
+    : [state.targetScreenId].filter(id=>next.document.nodes.some(node=>node.id===id));
   }
   if(abort.signal.aborted)return true;
   const saved=await client.rpc('checkpoint_studio_pipeline',{p_task:task.id,p_token:token,p_previous:state,p_next:next,p_summary:usage.summary.slice(0,2000),p_model:recordedModel(usage.model),p_input:usage.input_tokens,p_output:usage.output_tokens});
   if(saved.error)throw new Error('Could not save the private pipeline checkpoint.');
   if(saved.data?.status==='stale')return true;
   state=next;
+  await event('result',usage.summary.slice(0,1000));
   devWorkerLog('orchestrator_decision',{task:task.id.slice(0,8),agent_name:agentIdentity[stageRole].name,agent_persona:agentIdentity[stageRole].persona,completed_stage:completedStage,next_stage:state.stage<5?state.stage+1:'publish',action:state.action,duration_ms:Date.now()-stageStarted,decision_summary:usage.summary,qa_issues:state.issues});
   if(state.stage===5)await publish();
   else await event('status',state.issues.length?'The private draft needs a structural completion fix before review.':'Private draft saved. The next sequential action is queued.');
