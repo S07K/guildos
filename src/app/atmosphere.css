@@ -147,3 +147,23 @@ footer { position: relative; z-index: 1; min-height: 84px; margin-top: -84px; pa
 .landing-avatar { display: grid; place-items: center; width: 40px; height: 40px; overflow: hidden; border: 1px solid #d7e3da; border-radius: 50%; background: #e8f0ea; color: #315b46; font-size: 15px; font-weight: 700; text-decoration: none; }
 .landing-avatar img { width: 100%; height: 100%; object-fit: cover; }
 .landing-avatar:focus-visible { outline: 2px solid #315b46; outline-offset: 3px; }
+
+.hero-guild { display: flex; align-items: center; justify-content: center; gap: 5px; margin-top: 2px; }
+.hero-guild .agent-mark { filter: drop-shadow(0 4px 7px #314b3c1a); }
+.hero-guild + .hero-signin { margin-top: 16px; }
+
+.hero h1 .hero-headline-line{position:relative;color:inherit;font:inherit;letter-spacing:inherit}.hero h1 .hero-headline-second{color:#386650;font-weight:400}.hero-perch{position:relative}.hero-perched-avatar{position:absolute;z-index:1;display:block;line-height:0;pointer-events:none}.hero-avatar-one{left:8%;bottom:86%}.hero-avatar-two{left:69%;bottom:88%}.hero-avatar-three{right:6%;bottom:88%}.hero-avatar-four{left:35%;bottom:87%}.hero-avatar-five{left:45%;bottom:87%}@media(max-width:640px){.hero-perched-avatar .agent-mark{width:28px!important;height:28px!important}.hero-perched-avatar svg{max-width:28px;max-height:28px}.hero-avatar-one,.hero-avatar-two,.hero-avatar-three,.hero-avatar-four,.hero-avatar-five{bottom:88%}}
+
+.hero-guild-strip{display:flex;align-items:center;justify-content:center;gap:16px;margin:0 0 2px}.hero-guild-intro{color:#6a8272;font-size:9px;font-weight:700;letter-spacing:.12em;white-space:nowrap}.hero-guild-members{display:flex;align-items:center;gap:3px}.hero-guild-member{position:relative;display:inline-flex;line-height:0;border-radius:50%;outline-offset:3px}.hero-guild-member:focus-visible{outline:2px solid #52765d}.hero-guild-tooltip{position:absolute;z-index:5;bottom:calc(100% + 8px);left:50%;transform:translate(-50%,4px);padding:7px 9px;border-radius:6px;background:#294b39;color:#fff;font-size:10px;line-height:1;white-space:nowrap;opacity:0;visibility:hidden;transition:opacity .2s,transform .2s,visibility .2s;pointer-events:none}.hero-guild-member:hover .hero-guild-tooltip,.hero-guild-member:focus-visible .hero-guild-tooltip{opacity:1;visibility:visible;transform:translate(-50%,0)}.hero-guild-strip + .hero-signin{margin-top:18px}@media(max-width:640px){.hero-guild-strip{gap:10px}.hero-guild-intro{font-size:8px}.hero-guild-member .agent-mark{width:36px!important;height:36px!important}.hero-guild-member svg{max-width:36px;max-height:36px}}@media(prefers-reduced-motion:reduce){.hero-guild-tooltip{transition:none}}
+/* Soft, moving watercolor washes and water reflections over the hero landscape. */
+.hero-fluid{position:absolute;z-index:-1;inset:0;overflow:hidden;pointer-events:none;mask-image:linear-gradient(to bottom,transparent 18%,#000 55%,#000 90%,transparent)}
+.hero-fluid-wash{position:absolute;width:65%;height:55%;border-radius:50%;opacity:.42;will-change:transform}
+.hero-fluid-wash-one{left:-12%;bottom:2%;background:radial-gradient(ellipse,#a9cbd144 0%,#c3ded92a 35%,transparent 70%)}
+.hero-fluid-wash-two{right:-12%;bottom:8%;background:radial-gradient(ellipse,#e3d9b74d 0%,#c3d9ce2e 40%,transparent 70%)}
+.hero-fluid-ripple{position:absolute;left:15%;bottom:15%;width:55%;height:16%;border-radius:50%;border-top:1px solid #ffffff70;border-bottom:1px solid #d9edf04d;opacity:.45;will-change:transform,opacity}
+.hero-fluid-ripple-two{left:38%;bottom:8%;width:48%;height:11%;border-color:#ffffff80}
+.hero-signin{margin-top:8px;padding:16px 27px;box-shadow:0 8px 24px #315b4620}.hero-note{max-width:410px;margin-top:18px}.hero-explore{display:inline-flex;align-items:center;gap:12px;align-self:center;margin:48px 0 0;padding:0;color:#436750;font-size:13px;font-weight:600;line-height:1.4}.hero-explore-line{display:block;width:30px;height:1px;background:#789b80;transition:width .2s}.hero-explore:hover .hero-explore-line{width:42px}
+@media(max-width:680px){.hero-explore{margin-top:35px;font-size:12px}.hero-fluid-wash{width:85%}.hero-fluid-ripple{width:75%}}
+@media(prefers-reduced-motion:reduce){.hero-explore-line{transition:none}}
+.hero > .hero-landscape-color{display:none}
+@media(hover:hover) and (pointer:fine) and (prefers-reduced-motion:no-preference){.hero > .hero-landscape-monochrome{filter:grayscale(1)}.hero > .hero-landscape-color{display:block;mask-image:linear-gradient(transparent,transparent);-webkit-mask-image:linear-gradient(transparent,transparent)}.hero-fluid{opacity:.25}}

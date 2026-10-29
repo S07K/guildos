@@ -28,6 +28,7 @@ export function ProductPreview() {
  const pageTitle=titles[view];
  return <section className="product-showcase" aria-labelledby="preview-title" id="product-preview">
   <div className="preview-heading"><div><p className="eyebrow">A look inside your studio</p><h2 id="preview-title">The whole team,<br/><span>on the same canvas.</span></h2></div><p>Explore the GuildOS workspace, from project activity and reviews to the canvas where the work takes shape.</p></div>
+  <div className="preview-guild-perch" aria-hidden="true">{guild.map(role => <AgentMark key={role} role={role} size={48}/>)}</div>
   <div className="preview-frame"><div className="preview-chrome"><div className="preview-dots" aria-hidden="true"><i/><i/><i/></div><span className="preview-location">● &nbsp;app.guildos.design</span><span className="preview-demo-label">Interactive product preview</span></div>
    <div className={`preview-app ${view==='canvas'?'is-canvas':''}`}>
     {view!=='canvas'&&<aside className="preview-sidebar" aria-label="Workspace navigation"><Brand onClick={()=>setView('overview')}/><nav className="preview-nav-items">{nav.map(({id,label,icon:Icon})=><button type="button" key={id} onClick={()=>setView(id)} className={view===id?'is-active':''} aria-current={view===id?'page':undefined}><Icon size={16}/><span>{label}</span></button>)}</nav><div className="preview-sidebar-bottom"><span className="preview-user-avatar">S</span><span><strong>Studio member</strong><small>Workspace</small></span><MoreHorizontal size={16}/></div></aside>}
