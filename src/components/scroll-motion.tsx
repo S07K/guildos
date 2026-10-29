@@ -56,6 +56,15 @@ export function ScrollMotion({ children }: { children: ReactNode }) {
         });
       });
 
+      root.querySelectorAll<HTMLElement>('[data-note-motion]').forEach(element => {
+        const art = element.querySelector<HTMLElement>('.field-note-art > div');
+        if (!art) return;
+        gsap.fromTo(art, { y: 12 }, {
+          y: -12, ease: 'none',
+          scrollTrigger: { trigger: element, start: 'top bottom', end: 'bottom top', scrub: true },
+        });
+      });
+
       root.querySelectorAll<HTMLElement>('[data-parallax]').forEach(element => {
         const distance = () => window.innerWidth <= 640 ? 12 : 26;
         gsap.fromTo(element, { y: () => -distance(), scale: 1.06 }, {
