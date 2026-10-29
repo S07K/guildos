@@ -36,3 +36,11 @@ test('OAuth errors and unsafe return URLs stay on the sign-in page',async({page}
  await expect(page).toHaveURL(/\/signin\?error=oauth&next=%2Fstudio$/);
  await expect(page.getByRole('alert').filter({hasText:'Google sign-in'})).toBeVisible();
 });
+
+
+test('root OAuth codes are redirected to the PKCE callback with all query parameters',async({page})=>{
+ await page.goto('/?code=fixture-oauth-code&next=%2Fstudio%2Fprojects&state=preserved');
+ await expect(page).toHaveURL(/\/signin\?error=oauth&next=%2Fstudio%2Fprojects$/);
+ await page.goto('/?code=fixture-oauth-code');
+ await expect(page).toHaveURL(/\/signin\?error=oauth&next=%2Fstudio$/);
+});
