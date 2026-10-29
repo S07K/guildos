@@ -137,7 +137,7 @@ test('sequential pipeline checkpoints privately, fences publication, resumes cre
  const db=new PGlite();const alice=randomUUID(),bob=randomUUID();const secret='c'.repeat(64);const priorSecret=process.env.STUDIO_VAULT_KEY;process.env.STUDIO_VAULT_KEY=secret;
  try{
   await db.exec("CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role BYPASSRLS; CREATE SCHEMA auth; CREATE TABLE auth.users(id uuid primary key); CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$; GRANT USAGE ON SCHEMA public,auth TO authenticated,service_role,anon; GRANT EXECUTE ON FUNCTION auth.uid() TO authenticated;");
-  for(const file of ['202610110001_studio.sql','202610140001_studio_agent_notes.sql','202610140002_studio_agent_messages.sql','202610160002_studio_canvas_commits.sql','202610160003_studio_agent_tasks.sql','202610160004_studio_task_activity.sql','202610160005_studio_openrouter.sql','202610160006_studio_openrouter_free_default.sql','202610160007_studio_agent_subtasks.sql','202610160008_studio_agent_job_queue.sql','202610160009_studio_groq.sql','202610160010_studio_generation_wait_reason.sql','202610180001_studio_small_actions.sql','202610180002_studio_component_actions.sql','202610190001_studio_agent_handoffs.sql','202610190002_studio_handoff_action_limits.sql','202610200001_studio_sequential_pipeline.sql']){const sql=await readFile(new URL(`../supabase/migrations/${file}`,import.meta.url),'utf8');await db.exec(sql);}
+  for(const file of ['202610110001_studio.sql','202610140001_studio_agent_notes.sql','202610140002_studio_agent_messages.sql','202610160002_studio_canvas_commits.sql','202610160003_studio_agent_tasks.sql','202610160004_studio_task_activity.sql','202610160005_studio_openrouter.sql','202610160006_studio_openrouter_free_default.sql','202610160007_studio_agent_subtasks.sql','202610160008_studio_agent_job_queue.sql','202610160009_studio_groq.sql','202610160010_studio_generation_wait_reason.sql','202610180001_studio_small_actions.sql','202610180002_studio_component_actions.sql','202610190001_studio_agent_handoffs.sql','202610190002_studio_handoff_action_limits.sql','202610200001_studio_sequential_pipeline.sql','202610290001_separate_note_display.sql']){const sql=await readFile(new URL(`../supabase/migrations/${file}`,import.meta.url),'utf8');await db.exec(sql);}
   await db.query('insert into auth.users values($1),($2)',[alice,bob]);
   const wa=(await db.query('insert into studio_workspaces(owner_id) values($1) returning id',[alice])).rows[0].id;
   const wb=(await db.query('insert into studio_workspaces(owner_id) values($1) returning id',[bob])).rows[0].id;
@@ -146,6 +146,14 @@ test('sequential pipeline checkpoints privately, fences publication, resumes cre
   await db.exec('SET ROLE service_role');const client=adapter(db);
   const rpc=async(name,args)=>{const result=await client.rpc(name,args);if(result.error)throw result.error;return result.data;};
   const enqueue=(request=randomUUID(),actor=alice)=>rpc('enqueue_studio_task',{p_project:project,p_actor:actor,p_request:request,p_text:'@Mira build a food app',p_role:'ui_designer',p_version:null});
+  const displayRequest=randomUUID();
+  const displayArgs={p_project:project,p_actor:alice,p_request:displayRequest,p_text:'Revise the completed work for: original\nRequested changes:  Make it blue  ',p_role:'ui_designer',p_version:null,p_display:'  Make it blue  '};
+  const separated=await rpc('enqueue_studio_task',displayArgs);
+  assert.equal(separated.note.body,displayArgs.p_display);assert.equal(separated.task.instruction,displayArgs.p_text);
+  assert.equal((await rpc('enqueue_studio_task',displayArgs)).status,'replayed');
+  assert.equal((await rpc('enqueue_studio_task',{...displayArgs,p_display:'different'})).status,'conflict');
+  await db.query('delete from studio_tasks where id=$1',[separated.task.id]);
+  await db.query('delete from studio_agent_notes where id=$1',[separated.note.id]);
   const request=randomUUID();const first=await enqueue(request);assert.equal(first.status,'queued');assert.equal((await enqueue(request)).task.id,first.task.id);
   assert.equal((await enqueue(randomUUID(),bob)).status,'not_found');
   const roles=[];

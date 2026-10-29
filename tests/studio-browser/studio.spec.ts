@@ -23,7 +23,13 @@ test('anonymous users cannot open projects or generate designs', async ({ page, 
 test('sign-in, project conversation, encrypted key settings and dashboard', async ({ page }) => {
  await page.setViewportSize({ width: 1440, height: 1000 });
  await page.goto('/signin');
+ await page.getByRole('button', { name: 'Send sign-in code' }).click();
+ await expect(page.getByText('Enter your email address.')).toBeVisible();
+ await page.getByLabel('Email address').fill('invalid');
+ await page.getByRole('button', { name: 'Send sign-in code' }).click();
+ await expect(page.getByText('Enter a valid email address.')).toBeVisible();
  await page.getByLabel('Email address').fill('studio-test@example.com');
+ await expect(page.getByText('Enter a valid email address.')).toHaveCount(0);
  await page.getByRole('button', { name: 'Send sign-in code' }).click();
  await page.getByLabel('Email code').fill('123456');
  await page.getByRole('button', { name: 'Enter your studio' }).click();
@@ -44,7 +50,10 @@ test('sign-in, project conversation, encrypted key settings and dashboard', asyn
  await expect(page.getByLabel('Shared project conversation').getByText('hero', { exact: true })).toHaveCount(0);
  await page.getByRole('textbox', { name: 'Message the project guild' }).fill('@Noor review the checkout flow.');
  await page.getByRole('button', { name: 'Send message' }).click();
- await expect(page.getByLabel('Shared project conversation').getByText('@Noor', { exact: true })).toHaveCount(1);
+ await expect(page.getByLabel('Shared project conversation').locator('[data-mention=agent]').getByText('@Noor', { exact: true })).toBeVisible();
+ await page.getByRole('textbox', { name: 'Message the project guild' }).fill('Please review #checkout.');
+ await page.getByRole('button', { name: 'Send message' }).click();
+ await expect(page.getByLabel('Shared project conversation').locator('[data-mention=layer]').getByText('#checkout', { exact: true })).toBeVisible();
  await page.getByRole('link', { name: 'Back to dashboard', exact: true }).click();
  await page.getByRole('link', { name: 'Connections', exact: true }).click();
  await page.getByRole('button', { name: 'Connect API key', exact: true }).click();
@@ -418,7 +427,10 @@ test('conversation waits for completed work, opens a task list, and supports fee
  await composer.fill('Make the search button larger.');
  const submission = page.waitForRequest(request => request.url().endsWith('/api/studio/notes') && request.method() === 'POST');
  await composer.press('Enter');
- feedback = (await submission).postDataJSON().text; revisionRequested = true;
+ const submitted = (await submission).postDataJSON();
+ feedback = submitted.text; revisionRequested = true;
+ expect(submitted.displayMessage).toBe('Make the search button larger.');
+ await expect(page.getByLabel('Shared project conversation').getByText('Make the search button larger.', { exact: true })).toBeVisible();
  expect(feedback).toContain('Revise the completed work for: Improve the home screen');
  expect(feedback).toContain('Make the search button larger.');
  await expect(composer).toHaveValue('');

@@ -29,7 +29,7 @@ const server = createServer(async (req, res) => {
   if(!project||body.p_actor!==user.id)return send({status:'not_found'});
   const prior=tables.studio_tasks.find(t=>t.project_id===body.p_project&&t.request_id===body.p_request);
   if(prior)return send(prior.instruction===body.p_text&&prior.agent_role===body.p_role?{status:'replayed',task:prior,note:tables.studio_agent_notes.find(n=>n.id===prior.source_note_id)}:{status:'conflict'});
-  const note={id:randomUUID(),project_id:project.id,workspace_id:project.workspace_id,version_id:body.p_version,author_role:'human',mentioned_role:body.p_role,anchor:'page',body:body.p_text,created_at:new Date().toISOString()};
+  const note={id:randomUUID(),project_id:project.id,workspace_id:project.workspace_id,version_id:body.p_version,author_role:'human',mentioned_role:body.p_role,anchor:'page',body:body.p_display ?? body.p_text,created_at:new Date().toISOString()};
   const task={id:randomUUID(),project_id:project.id,workspace_id:project.workspace_id,request_id:body.p_request,source_note_id:note.id,agent_role:body.p_role,instruction:body.p_text,status:'queued',attempts:0,result_version_id:null,summary:'',error:'',input_tokens:0,output_tokens:0,created_at:note.created_at,updated_at:note.created_at};
   tables.studio_agent_notes.push(note);tables.studio_tasks.push(task);return send({status:'queued',note,task});
  }
