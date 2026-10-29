@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { ArrowRight, Check, Circle, MessageSquareText } from 'lucide-react';
+import { Check, Circle, MessageSquareText } from 'lucide-react';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { AgentMark } from '@/components/studio/agent-identity';
@@ -67,7 +67,7 @@ export function CreativeWorkflow() {
         <div className="journey-detail-agent"><AgentMark role={activeRole} size={38}/><span><small>YOUR {agentIdentity[activeRole].short.toUpperCase()}</small><strong>{agentIdentity[activeRole].name}</strong></span></div>
         <p>{current.description}</p>
       </div>
-      <a className="journey-link" href="#product-preview">Explore the studio <ArrowRight size={15}/></a>
+      <a className="journey-link" href="#product-preview">Explore the studio</a>
     </div>
     <div className="journey-visual" data-active={activeRole} aria-label="Five-stage creative workflow">
       <div className="journey-board-top"><span><span className="journey-board-dot"/> NORTHSTAR LAUNCH / CREATIVE WORKFLOW</span><span>5 SPECIALISTS · 1 SHARED BRIEF</span></div>
