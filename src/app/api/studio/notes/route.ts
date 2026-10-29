@@ -41,7 +41,8 @@ export async function GET(request: Request) {
  const savedNotes = (data || []).map(note => {
   const sourceTask = (tasks || []).find(item => item.source_note_id === note.id);
   const legacy = sourceTask && sourceTask.instruction === note.body && /^Revise the completed work for:/.test(note.body) && note.body.includes('Requested changes:');
-  const displayContent = legacy ? note.body.split('Requested changes:').at(-1)!.replace(/\u2063guildos-layer:[a-z0-9-]{1,80}\u2063/gi,'').trim() : note.body;
+  const legacyBody = legacy ? note.body.split('Requested changes:').at(-1)!.trim() : note.body;
+  const displayContent = sourceTask && sourceTask.instruction === note.body ? legacyBody.replace(/\n?\u2063guildos-layer:[a-z0-9-]{1,80}\u2063/g,'') : legacyBody;
   const task = (tasks || []).find(item => item.summary && item.summary === note.body);
   const speaker = task ? latestTaskSpeaker.get(task.id) : undefined;
   return speaker && agentRoles.includes(speaker as typeof agentRoles[number]) ? { ...note, author_role: speaker } : { ...note, displayContent };

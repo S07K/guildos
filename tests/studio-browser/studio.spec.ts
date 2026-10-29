@@ -48,9 +48,10 @@ test('sign-in, project conversation, encrypted key settings and dashboard', asyn
  await page.getByRole('button', { name: 'Send message' }).click();
  await expect(page.getByLabel('Shared project conversation').getByText('Keep the hero simple and inviting.')).toBeVisible();
  await expect(page.getByLabel('Shared project conversation').getByText('hero', { exact: true })).toHaveCount(0);
- await page.getByRole('textbox', { name: 'Message the project guild' }).fill('@Noor review the checkout flow.');
+ await page.getByRole('textbox', { name: 'Message the project guild' }).fill('@Noor review #checkout.');
  await page.getByRole('button', { name: 'Send message' }).click();
- await expect(page.getByLabel('Shared project conversation').getByText('@Noor', { exact: true })).toHaveCount(1);
+ await expect(page.getByLabel('Shared project conversation').locator('[data-mention=agent]').getByText('@Noor', { exact: true })).toBeVisible();
+ await expect(page.getByLabel('Shared project conversation').locator('[data-mention=layer]').getByText('#checkout', { exact: true })).toBeVisible();
  await page.getByRole('link', { name: 'Back to dashboard', exact: true }).click();
  await page.getByRole('link', { name: 'Connections', exact: true }).click();
  await page.getByRole('button', { name: 'Connect API key', exact: true }).click();

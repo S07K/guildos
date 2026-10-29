@@ -3,6 +3,7 @@
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Avatar, Box, Button, Chip, Skeleton, IconButton, Paper, Stack, TextField, Typography } from '@mui/material';
 import { AccountContext } from './account-menu';
+import { conversationSegments } from '@/lib/studio/conversation-highlights';
 import { dropdownSurfaceSx } from './dropdown-surface';
 import { ArrowUp, Hash, X } from 'lucide-react';
 import { agentRoles, agentIdentity, type AgentRole, type AgentAnchor } from '@/lib/studio/agent-roles';
@@ -174,7 +175,7 @@ export function GuildPanel({ projectId, versionId, layers: layerOptions = [], ad
     {note.author_role === 'human' ? <Avatar src={avatarUrl} slotProps={{img:{referrerPolicy:"no-referrer"}}} sx={{ width: 32, height: 32, fontSize: 12, fontWeight: 700, bgcolor: '#e9eef2', color: '#526374' }}>Y</Avatar> : <AgentMark role={note.author_role} size={32}/>}
     <Box sx={{ minWidth: 0, flex: 1 }}>
      <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', flexWrap: 'wrap' }}><Typography variant="body2" sx={{ fontWeight: 700 }}>{names[note.author_role]}</Typography>{note.author_role !== 'human' && <Typography variant="caption" color="text.secondary">{agentIdentity[note.author_role].name}</Typography>}<Typography variant="caption" color="text.secondary">{new Date(note.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</Typography></Stack>
-     <Paper variant="outlined" sx={{ mt: .5, px: 1.5, py: 1.15, borderRadius: '4px 14px 14px 14px', bgcolor: note.author_role === 'human' ? '#f4f7f5' : 'background.paper' }}><Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', lineHeight: 1.55 }}>{messageBody(note).split(/(@(?:Ari|Noor|Pip|Mira|Vale)\b)/gi).map((part, index) => { const role = agentRoles.find(role => `@${agentIdentity[role].persona}`.toLowerCase() === part.toLowerCase()); return role ? <Box component="span" key={index} sx={{ color: agentIdentity[role].color, bgcolor: agentIdentity[role].tint, borderRadius: '3px', px: .25, fontWeight: 600 }}>{part}</Box> : part; })}</Typography></Paper>
+     <Paper variant="outlined" sx={{ mt: .5, px: 1.5, py: 1.15, borderRadius: '4px 14px 14px 14px', bgcolor: note.author_role === 'human' ? '#f4f7f5' : 'background.paper' }}><Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', lineHeight: 1.55 }}>{conversationSegments(messageBody(note), layerOptions.map(layer => layer.name)).map((part, index) => part.kind === 'text' ? part.text : <Box component="span" key={index} data-mention={part.kind} sx={{ color: part.role ? agentIdentity[part.role].color : '#315d43', bgcolor: part.role ? agentIdentity[part.role].tint : '#e9f1eb', borderRadius: '3px', px: .25, fontWeight: 600 }}>{part.text}</Box>)}</Typography></Paper>
      {note.author_role === 'human' && taskWaits.some(item => item.noteId === note.id) && <TaskWaitNotice wait={taskWaits.find(item => item.noteId === note.id)!.wait}/>}
      {note.author_role !== 'human' && note.anchor !== 'page' && <Chip size="small" label={note.anchor} sx={{ mt: .6, height: 21, fontSize: 10 }}/>}
     </Box>
