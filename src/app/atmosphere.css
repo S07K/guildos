@@ -142,3 +142,8 @@ footer { position: relative; z-index: 1; min-height: 84px; margin-top: -84px; pa
   .closing-copy > p:not(.eyebrow) { font-size: 14px; }
   .closing-cta .eyebrow { font-size: 11px; }
 }
+.hero-signin { display: inline-flex; align-items: center; gap: 14px; margin-top: 24px; text-decoration: none; }
+
+.landing-avatar { display: grid; place-items: center; width: 40px; height: 40px; overflow: hidden; border: 1px solid #d7e3da; border-radius: 50%; background: #e8f0ea; color: #315b46; font-size: 15px; font-weight: 700; text-decoration: none; }
+.landing-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.landing-avatar:focus-visible { outline: 2px solid #315b46; outline-offset: 3px; }
