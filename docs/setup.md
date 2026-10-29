@@ -68,7 +68,7 @@ Under **Project Settings → Environment Variables**, set:
 | --- | --- | --- |
 | `SUPABASE_URL` | Preview project's HTTPS URL | Production project's HTTPS URL |
 | `SUPABASE_SECRET_KEY` | Preview backend secret | Production backend secret |
-| `NEXT_PUBLIC_APP_URL` | Leave unset | `https://guildos.design` or your canonical origin |
+| `NEXT_PUBLIC_APP_URL` | Leave unset | `https://www.guildos.design` or your canonical origin |
 | `WAITLIST_STORAGE` | Leave unset; production runtime chooses Supabase | Leave unset |
 | `WAITLIST_RATE_LIMIT_SECRET` | Optional separate secret | Optional separate secret |
 | `WAITLIST_IP_HEADER` | Leave unset; Vercel is detected automatically | Leave unset |

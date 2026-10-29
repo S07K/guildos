@@ -9,6 +9,7 @@ import { ProductPreview } from '@/components/product-preview';
 import { CreativeWorkflow } from '@/components/creative-workflow';
 import type { AgentRole } from '@/lib/studio/agent-roles';
 import { Check, Sparkles } from 'lucide-react';
+import { siteUrl } from '@/lib/site';
 
 function Mark() {
   return <svg viewBox="0 0 32 32" width="32" height="32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#315b46"/><g fill="#f4f8f4"><rect x="6" y="6" width="8" height="8" rx="2"/><rect x="18" y="6" width="8" height="10" rx="2"/><rect x="6" y="18" width="10" height="8" rx="2"/></g><rect x="20" y="20" width="6" height="6" rx="2" fill="#a8c981"/></svg>;
@@ -36,7 +37,7 @@ export default async function Home() {
   const initial = typeof profileName === 'string' ? profileName.trim().charAt(0).toUpperCase() || 'G' : 'G';
   return <div className="site-shell">
     <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify({
-      '@context': 'https://schema.org', '@type': 'SoftwareApplication', name: 'GuildOS', url: 'https://guildos.design', applicationCategory: 'DesignApplication', operatingSystem: 'Web', description: 'A shared creative studio where specialized AI agents collaborate around your brief while you direct and review the work.', offers: { '@type': 'Offer', category: 'Early access', price: '0', priceCurrency: 'USD' }, publisher: { '@type': 'Organization', name: 'GuildOS', url: 'https://guildos.design' },
+      '@context': 'https://schema.org', '@type': 'SoftwareApplication', name: 'GuildOS', url: siteUrl, applicationCategory: 'DesignApplication', operatingSystem: 'Web', description: 'A shared creative studio where specialized AI agents collaborate around your brief while you direct and review the work.', offers: { '@type': 'Offer', category: 'Early access', price: '0', priceCurrency: 'USD' }, publisher: { '@type': 'Organization', name: 'GuildOS', url: siteUrl },
     }) }} />
     <a className="skip-link" href="#main">Skip to content</a>
     <header className="site-header">

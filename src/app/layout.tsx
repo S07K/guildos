@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import localFont from 'next/font/local';
+import { siteUrl } from '@/lib/site';
 import './globals.css';
 import './creative-art.css';
 import './atmosphere.css';
@@ -15,7 +16,6 @@ const editorial = localFont({
   variable: '--font-editorial', display: 'swap',
 });
 
-const siteUrl = 'https://guildos.design';
 const description = 'Meet your creative team in one studio. GuildOS brings creative direction, UX, design, copy, and quality review together around your brief, with you in control.';
 
 export const metadata: Metadata = {

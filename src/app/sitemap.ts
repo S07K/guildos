@@ -1,7 +1,6 @@
 import type { MetadataRoute } from 'next';
 import { fieldNotes } from '@/lib/marketing/field-notes';
-
-const siteUrl = 'https://guildos.design';
+import { siteUrl } from '@/lib/site';
 
 export default function sitemap(): MetadataRoute.Sitemap {
   return [

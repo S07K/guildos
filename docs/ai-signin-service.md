@@ -14,7 +14,7 @@ Create a second Vercel project from this repository, set its root directory to `
 | `AI_SIGNIN_VAULT_KEY` | 32-byte hex key; generate with `openssl rand -hex 32` and back it up |
 | `SUPABASE_URL` | Same Supabase project used by GuildOS Studio |
 | `SUPABASE_SECRET_KEY` | Server-only Supabase key for the service |
-| `GUILDOS_APP_URL` | Canonical GuildOS origin, such as `https://guildos.design` |
+| `GUILDOS_APP_URL` | Canonical GuildOS origin, `https://www.guildos.design` |
 | `AI_SIGNIN_RETURN_ORIGINS` | Optional comma-separated additional exact return origins for preview deployments |
 | `OPENAI_CLIENT_ID` | OpenAI-issued client ID for the approved GuildOS integration |
 | `OPENAI_CLIENT_SECRET` | Only if OpenAI issues a confidential client |
