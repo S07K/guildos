@@ -1,4 +1,4 @@
-import { WaitlistForm } from '@/components/waitlist-form';
+import { authConfig, sessionClient, studioUser } from '@/lib/studio/supabase';
 import { fieldNotes } from '@/lib/marketing/field-notes';
 import { ScrollMotion } from '@/components/scroll-motion';
 import { ProcessArt } from '@/components/process-art';
@@ -27,7 +27,13 @@ const steps = [
   { number: '03', art: 'refine' as const, title: 'Make a draft ready to share.', description: 'Review the design on the canvas, ask for a revision, and keep the decisions that make the work yours.', tag: 'Editable drafts · clear review' },
 ];
 
-export default function Home() {
+export default async function Home() {
+  const user = authConfig() ? (await studioUser(await sessionClient())).data.user : null;
+  const studioHref = user ? '/studio' : '/signin';
+  const profileName = user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email || 'GuildOS member';
+  const profilePhoto = user?.user_metadata?.avatar_url || user?.user_metadata?.picture;
+  const avatarUrl = typeof profilePhoto === 'string' && /^https:\/\//.test(profilePhoto) ? profilePhoto : undefined;
+  const initial = typeof profileName === 'string' ? profileName.trim().charAt(0).toUpperCase() || 'G' : 'G';
   return <div className="site-shell">
     <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify({
       '@context': 'https://schema.org', '@type': 'SoftwareApplication', name: 'GuildOS', url: 'https://guildos.design', applicationCategory: 'DesignApplication', operatingSystem: 'Web', description: 'A shared creative studio where specialized AI agents collaborate around your brief while you direct and review the work.', offers: { '@type': 'Offer', category: 'Early access', price: '0', priceCurrency: 'USD' }, publisher: { '@type': 'Organization', name: 'GuildOS', url: 'https://guildos.design' },
@@ -35,7 +41,8 @@ export default function Home() {
     <a className="skip-link" href="#main">Skip to content</a>
     <header className="site-header">
       <a href="/" className="brand" aria-label="GuildOS home"><Mark /><span>guild<span className="brand-os">os</span></span></a>
-      <nav aria-label="Main navigation"><a href="#product-preview" className="process-link">The studio</a><a href="#how-it-works" className="process-link">How it works</a><a href="#blogs" className="process-link">Blogs</a><a href="#join" className="nav-cta">Get early access</a></nav>
+      <nav aria-label="Main navigation"><a href="#product-preview" className="process-link">The studio</a><a href="#how-it-works" className="process-link">How it works</a><a href="#blogs" className="process-link">Blogs</a>{user ? <a href="/studio" className="landing-avatar" aria-label="Open your studio">{avatarUrl ? <img src={avatarUrl} alt="" referrerPolicy="no-referrer" /> : initial}</a> : <a href="/signin" className="nav-cta">Sign in</a>}</nav>
+
     </header>
     <main id="main"><ScrollMotion>
       <section className="hero" aria-labelledby="hero-title">
@@ -45,12 +52,7 @@ export default function Home() {
         <p className="eyebrow hero-eyebrow" data-motion="hero"><span aria-hidden="true" /> YOUR CREATIVE STUDIO, WITH A GUILD BUILT IN</p>
         <h1 id="hero-title" data-motion="hero" data-delay="100">Big ideas deserve<br /><span>a team behind them.</span></h1>
         <p className="hero-description" data-motion="hero" data-delay="220">One shared workspace for your brief, a guild of creative specialists, and the work you shape together.</p>
-        <div className="waitlist-perch">
-          <div className="waitlist-perch-mascots" aria-hidden="true">
-            {specialists.map(({ role }) => <span key={role}><AgentMark role={role} size={38}/></span>)}
-          </div>
-          <WaitlistForm />
-        </div>
+        <a href={studioHref} className="closing-button hero-signin">Enter the studio</a>
 
         <p className="hero-note">A creative studio for founders and small teams. You set the direction; your guild helps move the work forward.</p>
         <a className="hero-explore" href="#product-preview">Explore the studio</a>
@@ -106,7 +108,7 @@ export default function Home() {
           <h2 id="calm-heading">Less busywork.<br /><span>More blue sky.</span></h2>
           <p>Great work starts with space to think. Let your guild take on the repetitive parts, so you can follow the ideas that feel like you.</p>
           <p>Set the direction. Explore the possibilities. Make the final call, in your own time.</p>
-          <a href="#join" className="quiet-link">Find your creative space</a>
+          <a href={studioHref} className="quiet-link">Find your creative space</a>
         </div>
       </section>
 
@@ -144,7 +146,7 @@ export default function Home() {
       </section>
       <section className="closing-cta" aria-labelledby="closing-title">
         <div className="closing-scenery" aria-hidden="true"><LandscapeImage scene="sailboat" className="closing-landscape" /></div>
-        <div className="closing-copy" data-motion="rise"><p className="eyebrow">A little less busy. A lot more possibility.</p><h2 id="closing-title">Your next chapter.<br /><span>A clearer horizon.</span></h2><p>Bring your next idea. We’ll bring the guild.</p><a href="#join" className="closing-button">Join the waitlist</a></div>
+        <div className="closing-copy" data-motion="rise"><p className="eyebrow">A little less busy. A lot more possibility.</p><h2 id="closing-title">Your next chapter.<br /><span>A clearer horizon.</span></h2><p>Bring your next idea. We’ll bring the guild.</p><a href={studioHref} className="closing-button">Enter the studio</a></div>
       </section>
     </ScrollMotion></main>
     <footer><div className="footer-left"><a href="/" className="footer-brand" aria-label="GuildOS home"><Mark/><span>guildos</span></a><nav className="footer-socials" aria-label="GuildOS social links"><a href="https://x.com/guildosdesign" target="_blank" rel="noreferrer">X</a><a href="https://www.linkedin.com/company/guildosdesign/" target="_blank" rel="noreferrer">LinkedIn</a></nav></div><span>Thoughtfully built. Human-led.</span><span>© {new Date().getFullYear()} GuildOS</span></footer>
