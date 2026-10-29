@@ -4,7 +4,16 @@ import { authCookieOptions, isAuthCookie, SESSION_EXPIRY_COOKIE, safeNextUrl } f
 import { readSessionWindow, validateStudioSession } from '@/lib/auth/session-window';
 
 export async function proxy(request: NextRequest) {
- const api=request.nextUrl.pathname.startsWith('/api/studio/');
+ if(request.nextUrl.pathname==='/'&&request.nextUrl.searchParams.has('code')) {
+  const callbackUrl=request.nextUrl.clone();
+  callbackUrl.pathname='/auth/callback';
+  if(!callbackUrl.searchParams.has('next'))callbackUrl.searchParams.set('next','/studio');
+  return NextResponse.redirect(callbackUrl);
+ }
+ const path=request.nextUrl.pathname;
+ const api=path.startsWith('/api/studio/');
+ const studio=path==='/studio'||path.startsWith('/studio/')||path==='/signin';
+ if(!api&&!studio)return NextResponse.next({request});
  const protectedRoute=api||request.nextUrl.pathname==='/studio'||request.nextUrl.pathname.startsWith('/studio/');
  // Preserve the existing mutation origin boundary before authentication.
  if(api&&!['GET','HEAD','OPTIONS'].includes(request.method)&&request.headers.get('origin')!==new URL(process.env.STUDIO_APP_URL||request.url).origin) {
@@ -47,4 +56,4 @@ export async function proxy(request: NextRequest) {
  response.headers.set('Pragma','no-cache');
  return response;
 }
-export const config={matcher:['/studio/:path*','/signin','/api/studio/:path*']};
+export const config={matcher:['/:path*']};
