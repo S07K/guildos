@@ -1,8 +1,9 @@
 'use client';
 import { createContext, useContext, useState } from 'react';
+import Link from 'next/link';
 import { Avatar, Box, Divider, IconButton, Menu, MenuItem, Typography } from '@mui/material';
 import { MoreVertical as MoreVertOutlined } from 'lucide-react';
-import { LogOut as LogoutOutlined } from 'lucide-react';
+import { LogOut as LogoutOutlined, LayoutDashboard as DashboardOutlined, Settings as SettingsOutlined } from 'lucide-react';
 import { signOut } from '@/app/studio/actions';
 
 type Account = { email: string; name: string; avatarUrl?: string };
@@ -27,6 +28,10 @@ export function AccountMenu({ variant = 'compact' }: { variant?: 'compact' | 'si
   </Box> : menuButton}
   <Menu anchorEl={anchor} open={!!anchor} onClose={() => setAnchor(null)} slotProps={{ paper: { sx: { minWidth: 230, mt: .5, border: 'none', '& .MuiMenuItem-root': { fontSize: 14, minHeight: 44 }, '& .MuiMenuItem-root svg': { width: 17, height: 17 }, '& .MuiTypography-body2': { fontSize: 16 }, '& .MuiTypography-caption': { fontSize: 13 } } } }}>
    <Box sx={{ px: 2, py: 1, maxWidth: 300 }}><Typography variant="body2" sx={{ fontWeight: 650 }}>{name}</Typography><Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>{account.email}</Typography></Box><Divider />
+   {variant === 'compact' && <>
+    <MenuItem component={Link} href="/studio" onClick={() => setAnchor(null)}><DashboardOutlined size={18} style={{marginRight: 12}}/>Dashboard</MenuItem>
+    <MenuItem component={Link} href="/studio/settings" onClick={() => setAnchor(null)}><SettingsOutlined size={18} style={{marginRight: 12}}/>Connections</MenuItem><Divider />
+   </>}
    <Box component="form" noValidate action={signOut}><MenuItem component="button" type="submit" sx={{ width: '100%' }}><LogoutOutlined size={18}  style={{marginRight: 12.0}}/>Sign out</MenuItem></Box>
   </Menu>
  </>;
