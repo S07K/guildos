@@ -28,7 +28,7 @@ export async function GET(request: Request) {
  // incorrectly show "Project not found" just from opening the conversation.
  const { data, error } = await client.from('studio_agent_notes').select('*').eq('project_id', projectId).order('created_at', { ascending: true }).limit(200);
  if (error) return json({ error: 'The guild discussion could not be loaded. Apply the latest Supabase migration.' }, 503);
- const { data: tasks } = await client.from('studio_tasks').select('id,summary').eq('project_id', projectId);
+ const { data: tasks } = await client.from('studio_tasks').select('id,summary,source_note_id,instruction').eq('project_id', projectId);
  const taskIds = (tasks || []).map(task => task.id);
  const { data: events } = taskIds.length
   ? await client.from('studio_task_events').select('id,task_id,kind,speaker_role,body,created_at').in('task_id', taskIds).order('id', { ascending: false }).limit(300)
@@ -39,9 +39,12 @@ export async function GET(request: Request) {
  const latestTaskSpeaker = new Map<string, string>();
  for (const event of conversationEvents) latestTaskSpeaker.set(event.task_id, event.speaker_role!);
  const savedNotes = (data || []).map(note => {
+  const sourceTask = (tasks || []).find(item => item.source_note_id === note.id);
+  const legacy = sourceTask && sourceTask.instruction === note.body && /^Revise the completed work for:/.test(note.body) && note.body.includes('Requested changes:');
+  const displayContent = legacy ? note.body.split('Requested changes:').at(-1)!.replace(/\u2063guildos-layer:[a-z0-9-]{1,80}\u2063/gi,'').trim() : note.body;
   const task = (tasks || []).find(item => item.summary && item.summary === note.body);
   const speaker = task ? latestTaskSpeaker.get(task.id) : undefined;
-  return speaker && agentRoles.includes(speaker as typeof agentRoles[number]) ? { ...note, author_role: speaker } : note;
+  return speaker && agentRoles.includes(speaker as typeof agentRoles[number]) ? { ...note, author_role: speaker } : { ...note, displayContent };
  });
  const progressNotes = conversationEvents.filter(event => event.speaker_role && !(event.kind === 'error' && (tasks || []).some(task => task.id === event.task_id && task.summary === event.body)) && (
   event.kind === 'result' || event.kind === 'error' || event.kind === 'status' && (event.body.startsWith('Working on: ') || /^Stage \d\/5 · /.test(event.body))
@@ -62,13 +65,13 @@ export async function POST(request: Request) {
  const client = await sessionClient();
  const { data: { user } } = await studioUser(client);
  if (!user) return json({ error: 'Your session expired. Sign in again.' }, 401);
- let body: { projectId?: unknown; versionId?: unknown; anchor?: unknown; mentionedRole?: unknown; targetLayerId?:unknown; text?: unknown; requestId?: unknown };
+ let body: { projectId?: unknown; versionId?: unknown; anchor?: unknown; mentionedRole?: unknown; targetLayerId?:unknown; text?: unknown; displayMessage?: unknown; requestId?: unknown };
  try {
   const raw = await request.text();
-  if (raw.length > 5000) return json({ error: 'Comment is too long.' }, 413);
+  if (raw.length > 16000) return json({ error: 'Comment is too long.' }, 413);
   body = JSON.parse(raw);
  } catch { return json({ error: 'Invalid comment.' }, 400); }
- if (!body || typeof body.requestId !== 'string' || !uuid.test(body.requestId) || typeof body.projectId !== 'string' || !uuid.test(body.projectId) || typeof body.text !== 'string' || !body.text.trim() || body.text.length > 2000 || body.targetLayerId!==undefined&&(typeof body.targetLayerId!=='string'||!/^[a-z0-9-]{1,80}$/i.test(body.targetLayerId)) || !anchors.includes(String(body.anchor)) || (body.mentionedRole !== null && body.mentionedRole !== undefined && !agentRoles.includes(body.mentionedRole as typeof agentRoles[number])) || (body.versionId && (typeof body.versionId !== 'string' || !uuid.test(body.versionId)))) return json({ error: 'Invalid comment.' }, 400);
+ if (!body || typeof body.displayMessage !== 'string' || !body.displayMessage.trim() || body.displayMessage.length > 2000 || typeof body.requestId !== 'string' || !uuid.test(body.requestId) || typeof body.projectId !== 'string' || !uuid.test(body.projectId) || typeof body.text !== 'string' || !body.text.trim() || body.text.length > 2000 || body.targetLayerId!==undefined&&(typeof body.targetLayerId!=='string'||!/^[a-z0-9-]{1,80}$/i.test(body.targetLayerId)) || !anchors.includes(String(body.anchor)) || (body.mentionedRole !== null && body.mentionedRole !== undefined && !agentRoles.includes(body.mentionedRole as typeof agentRoles[number])) || (body.versionId && (typeof body.versionId !== 'string' || !uuid.test(body.versionId)))) return json({ error: 'Invalid comment.' }, 400);
  const project = await projectFor(client, body.projectId);
  if (!project) return json({ error: 'Project not found.' }, 404);
  if (body.versionId) {
@@ -77,7 +80,7 @@ export async function POST(request: Request) {
  }
  const { data, error } = await adminClient().rpc('enqueue_studio_task', {
   p_project: project.id, p_actor: user.id, p_request: body.requestId,
-  p_text: `${body.text.trim().slice(0,2000-(body.targetLayerId?encodeLayerReference(body.targetLayerId).length+1:0))}${body.targetLayerId?`\n${encodeLayerReference(body.targetLayerId)}`:''}`, p_role: body.mentionedRole || 'creative_director', p_version: body.versionId || null,
+  p_text: `${body.text.trim().slice(0,2000-(body.targetLayerId?encodeLayerReference(body.targetLayerId).length+1:0))}${body.targetLayerId?`\n${encodeLayerReference(body.targetLayerId)}`:''}`, p_role: body.mentionedRole || 'creative_director', p_version: body.versionId || null, p_display: body.displayMessage,
  });
  if (error || !data) {
   if(error) console.error('Studio task enqueue failed:',error.code,error.message);

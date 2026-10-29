@@ -150,3 +150,7 @@ footer { display: flex; justify-content: space-between; gap: 20px; align-items: 
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+.email-row input[aria-invalid="true"] { border: 1px solid #ef4444; background: #fef2f2; }
+.email-row input[aria-invalid="true"]::placeholder { color: #f87171; }
+.email-row input[aria-invalid="true"]:focus { box-shadow: 0 0 0 3px #ef444433; }

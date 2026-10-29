@@ -9,7 +9,7 @@ import { Settings as SettingsOutlined } from 'lucide-react';
 import { signOut } from '@/app/studio/actions';
 
 type Account = { email: string; name: string; avatarUrl?: string };
-const AccountContext = createContext<Account>({ email: '', name: '' });
+export const AccountContext = createContext<Account>({ email: '', name: '' });
 export const AccountProvider = AccountContext.Provider;
 
 function displayName(account: Account) {
@@ -32,7 +32,7 @@ export function AccountMenu({ variant = 'compact' }: { variant?: 'compact' | 'si
    <Box sx={{ px: 2, py: 1, maxWidth: 300 }}><Typography variant="body2" sx={{ fontWeight: 650 }}>{name}</Typography><Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>{account.email}</Typography></Box><Divider />
    <MenuItem component={Link} href="/studio" onClick={() => setAnchor(null)}><DashboardOutlined size={18}  style={{marginRight: 12.0}}/>Dashboard</MenuItem>
    <MenuItem component={Link} href="/studio/settings" onClick={() => setAnchor(null)}><SettingsOutlined size={18}  style={{marginRight: 12.0}}/>Connections</MenuItem><Divider />
-   <Box component="form" action={signOut}><MenuItem component="button" type="submit" sx={{ width: '100%' }}><LogoutOutlined size={18}  style={{marginRight: 12.0}}/>Sign out</MenuItem></Box>
+   <Box component="form" noValidate action={signOut}><MenuItem component="button" type="submit" sx={{ width: '100%' }}><LogoutOutlined size={18}  style={{marginRight: 12.0}}/>Sign out</MenuItem></Box>
   </Menu>
  </>;
 }

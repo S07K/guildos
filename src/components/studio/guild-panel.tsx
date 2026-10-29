@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Avatar, Box, Button, Chip, Skeleton, IconButton, Paper, Stack, TextField, Typography } from '@mui/material';
+import { AccountContext } from './account-menu';
 import { dropdownSurfaceSx } from './dropdown-surface';
 import { ArrowUp, Hash, X } from 'lucide-react';
 import { agentRoles, agentIdentity, type AgentRole, type AgentAnchor } from '@/lib/studio/agent-roles';
@@ -11,13 +12,13 @@ import { TaskWaitNotice } from './task-wait-notice';
 import { AgentMark } from './agent-identity';
 import { ConversationSkeleton } from './loading-states';
 
-export type GuildNote = { id: string; version_id: string | null; author_role: AgentRole | 'human'; mentioned_role: AgentRole | null; anchor: AgentAnchor; body: string; created_at: string };
+export type GuildNote = { id: string; version_id: string | null; author_role: AgentRole | 'human'; mentioned_role: AgentRole | null; anchor: AgentAnchor; body: string; displayContent?: string; created_at: string };
 const names: Record<AgentRole | 'human', string> = { human: 'You', ...Object.fromEntries(agentRoles.map(role => [role, agentIdentity[role].persona])) } as Record<AgentRole | 'human', string>;
 const mentionPattern = /(^|\s)@([\p{L}\p{N}_-]*)$/u;
 const layerMentionPattern = /(^|\s)#([\p{L}\p{N}_ -]*)$/u;
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 function messageBody(note: GuildNote) {
- if (note.author_role === 'human') return note.body;
+ if (note.author_role === 'human') return note.displayContent ?? note.body;
  const persona = agentIdentity[note.author_role].persona;
  return note.body.replace(new RegExp(`^\\s*${persona}\\s*(?::|[–—-])\\s*`, 'i'), '');
 }
@@ -28,6 +29,7 @@ async function conversationData(response:Response) {
 }
 
 export function GuildPanel({ projectId, versionId, layers: layerOptions = [], addedNotes = [], initialMention = null, onInitialMentionUsed, selectedContext = null }: { projectId: string; versionId: string | null; layers?: { id: string; name: string }[]; addedNotes?: GuildNote[]; initialMention?: AgentRole | null; onInitialMentionUsed?: () => void; selectedContext?: { id: string; name: string } | null }) {
+ const { avatarUrl } = useContext(AccountContext);
  const [conversationLoaded, setConversationLoaded] = useState(false);
  const [notes, setNotes] = useState<GuildNote[]>(addedNotes);
  const [text, setText] = useState('');
@@ -130,8 +132,8 @@ export function GuildPanel({ projectId, versionId, layers: layerOptions = [], ad
   requestAnimationFrame(() => { inputRef.current?.focus(); inputRef.current?.setSelectionRange(nextCaret, nextCaret); });
  }
  async function submit() {
-  const draftMessage = text.trim();
-  if (!draftMessage || saving || sending.current) return;
+  const draftMessage = text;
+  if (!draftMessage.trim() || saving || sending.current) return;
   const contextPrefix = reviewFeedback ? `Revise the completed work for: ${reviewFeedback.instruction.slice(0,500)}\nRequested changes: ` : composerContext ? `#${composerContext.name} ` : '';
   const message = `${contextPrefix}${draftMessage}`.slice(0, 2000);
   const layerMentions=layerOptions.flatMap(layer=>[layer.name,layer.name.replace(/\s+/g,'_'),layer.id].map(label=>({id:layer.id,label}))).sort((a,b)=>b.label.length-a.label.length);
@@ -139,7 +141,7 @@ export function GuildPanel({ projectId, versionId, layers: layerOptions = [], ad
   const mention = agentRoles.find(role => new RegExp(`@${agentIdentity[role].persona}\\b`, 'i').test(message)) || null;
   sending.current = true; setSaving(true); setError('');
   try {
-   const payload = JSON.stringify({ projectId, versionId: reviewFeedback?.versionId || versionId, anchor: 'page', mentionedRole: mention, targetLayerId:targetLayerId||explicitLayer, text: message });
+   const payload = JSON.stringify({ projectId, versionId: reviewFeedback?.versionId || versionId, anchor: 'page', mentionedRole: mention, targetLayerId:targetLayerId||explicitLayer, text: message, displayMessage: draftMessage });
    if (pendingMessage.current?.payload !== payload) pendingMessage.current = {payload,requestId:crypto.randomUUID()};
    const response = await fetch('/api/studio/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({...JSON.parse(payload),requestId:pendingMessage.current.requestId}) });
    const data = await conversationData(response);
@@ -169,7 +171,7 @@ export function GuildPanel({ projectId, versionId, layers: layerOptions = [], ad
   </Stack>
   <Box ref={feedRef} sx={{ flex: 1, minHeight: 0, overflowY: 'auto', px: 2, py: 2 }}>
    {!conversationLoaded&&!notes.length?<ConversationSkeleton/>:notes.length ? <Stack spacing={2} aria-label="Shared project conversation">{notes.map(note => <Stack key={note.id} direction="row" spacing={1.25} sx={{ alignItems: 'flex-start' }}>
-    {note.author_role === 'human' ? <Avatar sx={{ width: 32, height: 32, fontSize: 12, fontWeight: 700, bgcolor: '#e9eef2', color: '#526374' }}>Y</Avatar> : <AgentMark role={note.author_role} size={32}/>}
+    {note.author_role === 'human' ? <Avatar src={avatarUrl} slotProps={{img:{referrerPolicy:"no-referrer"}}} sx={{ width: 32, height: 32, fontSize: 12, fontWeight: 700, bgcolor: '#e9eef2', color: '#526374' }}>Y</Avatar> : <AgentMark role={note.author_role} size={32}/>}
     <Box sx={{ minWidth: 0, flex: 1 }}>
      <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', flexWrap: 'wrap' }}><Typography variant="body2" sx={{ fontWeight: 700 }}>{names[note.author_role]}</Typography>{note.author_role !== 'human' && <Typography variant="caption" color="text.secondary">{agentIdentity[note.author_role].name}</Typography>}<Typography variant="caption" color="text.secondary">{new Date(note.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</Typography></Stack>
      <Paper variant="outlined" sx={{ mt: .5, px: 1.5, py: 1.15, borderRadius: '4px 14px 14px 14px', bgcolor: note.author_role === 'human' ? '#f4f7f5' : 'background.paper' }}><Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', lineHeight: 1.55 }}>{messageBody(note).split(/(@(?:Ari|Noor|Pip|Mira|Vale)\b)/gi).map((part, index) => { const role = agentRoles.find(role => `@${agentIdentity[role].persona}`.toLowerCase() === part.toLowerCase()); return role ? <Box component="span" key={index} sx={{ color: agentIdentity[role].color, bgcolor: agentIdentity[role].tint, borderRadius: '3px', px: .25, fontWeight: 600 }}>{part}</Box> : part; })}</Typography></Paper>

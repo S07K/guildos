@@ -23,7 +23,13 @@ test('anonymous users cannot open projects or generate designs', async ({ page, 
 test('sign-in, project conversation, encrypted key settings and dashboard', async ({ page }) => {
  await page.setViewportSize({ width: 1440, height: 1000 });
  await page.goto('/signin');
+ await page.getByRole('button', { name: 'Send sign-in code' }).click();
+ await expect(page.getByText('Enter your email address.')).toBeVisible();
+ await page.getByLabel('Email address').fill('invalid');
+ await page.getByRole('button', { name: 'Send sign-in code' }).click();
+ await expect(page.getByText('Enter a valid email address.')).toBeVisible();
  await page.getByLabel('Email address').fill('studio-test@example.com');
+ await expect(page.getByText('Enter a valid email address.')).toHaveCount(0);
  await page.getByRole('button', { name: 'Send sign-in code' }).click();
  await page.getByLabel('Email code').fill('123456');
  await page.getByRole('button', { name: 'Enter your studio' }).click();
@@ -418,7 +424,10 @@ test('conversation waits for completed work, opens a task list, and supports fee
  await composer.fill('Make the search button larger.');
  const submission = page.waitForRequest(request => request.url().endsWith('/api/studio/notes') && request.method() === 'POST');
  await composer.press('Enter');
- feedback = (await submission).postDataJSON().text; revisionRequested = true;
+ const submitted = (await submission).postDataJSON();
+ feedback = submitted.text; revisionRequested = true;
+ expect(submitted.displayMessage).toBe('Make the search button larger.');
+ await expect(page.getByLabel('Shared project conversation').getByText('Make the search button larger.', { exact: true })).toBeVisible();
  expect(feedback).toContain('Revise the completed work for: Improve the home screen');
  expect(feedback).toContain('Make the search button larger.');
  await expect(composer).toHaveValue('');
