@@ -1,3 +1,4 @@
+import { trackEvent } from '@/lib/analytics';
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { authConfig, sessionClient } from '@/lib/studio/supabase';
@@ -16,6 +17,7 @@ export async function GET(request: Request) {
    const {data,error}=await client.auth.exchangeCodeForSession(code);
    if(!error&&data.session) {
     jar.set(SESSION_EXPIRY_COOKIE,issueSessionWindow(data.session),{...authCookieOptions,httpOnly:true});
+    await trackEvent('signed_in',{method:'oauth'});
     return NextResponse.redirect(new URL(next,origin),{headers:{'Cache-Control':'private, no-store'}});
    }
   } catch { /* Never expose provider errors, authorization codes, or tokens in redirects. */ }

@@ -7,6 +7,7 @@ import { generateChatGPT } from '@/lib/studio/chatgpt';
 import { runGuild, type AgentNote } from '@/lib/studio/guild';
 import { withProviderFallback, preferredProvider, type ModelProvider } from '@/lib/studio/provider-fallback.ts';
 import { hasChatGPTPlan } from '@/lib/studio/chatgpt-oauth';
+import { trialConfig, claimTrialRun, releaseTrialRun, trialExhaustedMessage } from '@/lib/studio/trial';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
@@ -52,30 +53,41 @@ export async function POST(request: Request) {
  ]);
  if(routerError && routerError.code!=='PGRST205') return json({error:'OpenRouter connection could not be loaded.'},503);
  if(groqError && groqError.code!=='PGRST205') return json({error:'Groq connection could not be loaded.'},503);
- const provider: ModelProvider = body.provider || preferredProvider({chatgpt:planConnected,groq:!!groqCredential,openrouter:!!routerCredential,api:!!credential});
+ // Without any workspace connection, a configured platform trial key stands in for one provider.
+ const trial = !credential && !routerCredential && !groqCredential && !planConnected ? trialConfig() : null;
+ const trialRun = trial ? randomUUID() : null;
+ if (trial && trialRun) {
+  try { if (!await claimTrialRun(admin, project.workspace_id, trialRun, trial)) return json({ error: trialExhaustedMessage, code: 'trial_exhausted' }, 402); }
+  catch { return json({ error: 'Generation is temporarily unavailable.' }, 503); }
+ }
+ const trialCredential = trial ? { key: trial.key, model: trial.model } : null;
+ const provider: ModelProvider = trial ? trial.provider : body.provider || (preferredProvider({chatgpt:planConnected,groq:!!groqCredential,openrouter:!!routerCredential,api:!!credential}));
  if (body.provider && !['api','chatgpt','openrouter','groq'].includes(body.provider)) return json({ error: 'Invalid model connection.' },400);
- const available = { api: !!credential, chatgpt: planConnected, openrouter:!!routerCredential, groq:!!groqCredential };
+ // The legacy one-shot generator has no Claude path; agent tasks use Claude through the worker.
+ const available = { api: !!credential, chatgpt: planConnected, anthropic: false, openrouter:!!routerCredential||trial?.provider==='openrouter', groq:!!groqCredential||trial?.provider==='groq' };
  if (provider === 'chatgpt' && !available.chatgpt) return json({ error: 'Reconnect ChatGPT in Connections; its generation service is unavailable.' },400);
  if (provider === 'api' && !available.api) return json({ error: 'Connect an OpenAI API key in Connections first.' },400);
  if (provider === 'openrouter' && !available.openrouter) return json({error:'Connect OpenRouter in Connections first.'},400);
  if (provider === 'groq' && !available.groq) return json({error:'Connect Groq in Connections first.'},400);
  const token = randomUUID();
  const { data: allowed, error: lockError } = await admin.rpc('reserve_studio_generation', { workspace: project.workspace_id, token });
- if (lockError) return json({ error: 'Generation is temporarily unavailable.' }, 503);
- if (!allowed) return json({ error: 'A generation is already running, or the daily limit of 30 requests has been reached. Try again later.' }, 429);
+ const giveBackTrial = async () => { if (trialRun) await releaseTrialRun(admin, project.workspace_id, trialRun); };
+ if (lockError) { await giveBackTrial(); return json({ error: 'Generation is temporarily unavailable.' }, 503); }
+ if (!allowed) { await giveBackTrial(); return json({ error: 'A generation is already running, or the daily limit of 30 requests has been reached. Try again later.' }, 429); }
  let leaseLost=false,renewing=false;
  const heartbeat=setInterval(async()=>{if(renewing)return;renewing=true;try{const renewed=await admin.rpc('renew_studio_generation',{p_workspace:project.workspace_id,p_token:token});if(renewed.error||!renewed.data)leaseLost=true;}catch{leaseLost=true;}finally{renewing=false;}},20000);
  try {
   const attempt = await withProviderFallback({ preferred: provider, available, run: selectedProvider => selectedProvider === 'chatgpt'
    ? generateChatGPT({workspace:project.workspace_id,brief:project.brief,previous,feedback:body.feedback})
-   : runGuild({ key: openKey((selectedProvider==='groq'?groqCredential:selectedProvider==='openrouter'?routerCredential:credential)!.ciphertext, project.workspace_id), brief: project.brief, previous, feedback: body.feedback, discussion: [...(discussion || [])].reverse(),provider:selectedProvider,model:selectedProvider==='groq'?groqCredential!.model:selectedProvider==='openrouter'?routerCredential!.model:process.env.STUDIO_OPENAI_MODEL||'gpt-4.1-mini' }) });
-  if(leaseLost) return json({error:'The generation lease expired. No changes were published.'},409);
+   : runGuild({ key: trialCredential ? trialCredential.key : openKey((selectedProvider==='groq'?groqCredential:selectedProvider==='openrouter'?routerCredential:credential)!.ciphertext, project.workspace_id), brief: project.brief, previous, feedback: body.feedback, discussion: [...(discussion || [])].reverse(),provider:selectedProvider as 'api'|'openrouter'|'groq',model:trialCredential?trialCredential.model:selectedProvider==='groq'?groqCredential!.model:selectedProvider==='openrouter'?routerCredential!.model:process.env.STUDIO_OPENAI_MODEL||'gpt-4.1-mini' }) });
+  if(leaseLost) { await giveBackTrial(); return json({error:'The generation lease expired. No changes were published.'},409); }
   const result = attempt.value;
   const notes: AgentNote[] = 'notes' in result && Array.isArray(result.notes) ? result.notes as AgentNote[] : [];
   const committed = await commitVersion({ projectId: project.id, workspaceId: project.workspace_id, actorId: user.id,
    requestId: token, expectedVersionId: body.expectedVersionId, parentVersionId: body.versionId || null,
    document: result.document, feedback: body.feedback, model: result.model, inputTokens: result.input_tokens, outputTokens: result.output_tokens });
   if (committed.response) {
+   await giveBackTrial();
    const failure = await committed.response.json();
    return json({ ...failure, error: `${failure.error} Model usage may still apply.`, generatedDocument: result.document }, committed.response.status);
   }
@@ -87,6 +99,7 @@ export async function POST(request: Request) {
   }
   return json({ version, notes: [], provider: attempt.provider, switchedFrom: attempt.switchedFrom });
  } catch (error) {
+  await giveBackTrial();
   const message = error instanceof Error ? error.message : '';
   const safe = /^(OpenAI|OpenRouter|Groq|ChatGPT|The (generation|generated design)|This brief)/.test(message);
   return json({ error: safe ? message : 'Generation could not finish. Please try again; your saved versions are safe.' }, 502);

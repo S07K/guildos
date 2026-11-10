@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { blankCanvas } from '../src/lib/studio/canvas.ts';
 import { componentToCanvas, canvasToComponent } from '../src/lib/studio/design-system.ts';
-import { initialPipeline, advanceDraft, validateStageEdit, rejectOrApprove, pipelineIssues } from '../src/lib/studio/agents/pipeline.ts';
+import { initialPipeline, advanceDraft, validateStageEdit, rejectOrApprove, pipelineIssues, normalizeStageEdit, alignStageCommands } from '../src/lib/studio/agents/pipeline.ts';
 import { validateProposal, proposeCanvasWork } from '../src/lib/studio/agents/proposal.ts';
 const node=(id,type,parentId=null,properties={})=>({id,type,parentId,layoutMode:'VERTICAL',primaryAxisSizingMode:'HUG',counterAxisSizingMode:'FILL',padding:0,itemSpacing:8,properties:{...(id==='screen'&&type==='container'&&parentId===null?{screenPreset:'mobile'}:{}),...properties}});
 const document=()=>({...blankCanvas(),nodes:[componentToCanvas(node('screen','container')),componentToCanvas(node('title','text','screen',{text:'Welcome'})),componentToCanvas(node('cta','button','screen',{text:'Continue'}))]});
@@ -17,6 +17,33 @@ test('stage permissions enforce structure, surface-only direction, text-only cop
  assert.doesNotThrow(()=>validateStageEdit({...base,stage:1},color));
  assert.throws(()=>validateStageEdit({...base,stage:3},color),/only existing text values/);
  assert.throws(()=>validateStageEdit({...base,stage:4},color),/read-only/);
+});
+test('out-of-scope slips are corrected instead of failing the run',()=>{
+ const base=state();
+ // UX colours a new section and restyles an existing container: neutralised, then valid.
+ const ux=structuredClone(base.document);
+ ux.nodes.push({...componentToCanvas(node('header','container','screen')),fill:'#ff3366',stroke:'#111111',textColor:'#ffffff'});
+ ux.nodes[0].fill='#000000';
+ assert.throws(()=>validateStageEdit(base,ux),/surface styling|neutral default colors/);
+ const fixed=normalizeStageEdit(base,ux);
+ assert.doesNotThrow(()=>validateStageEdit(base,fixed));
+ const header=fixed.nodes.find(item=>item.id==='header');
+ assert.deepEqual([header.fill,header.stroke,header.textColor],['#ffffff','#d1d5db','#202b38']);
+ assert.equal(fixed.nodes[0].fill,base.document.nodes[0].fill);
+ const commands=alignStageCommands(base.document,[{type:'create',node:ux.nodes.at(-1)},{type:'update',id:'screen',patch:{fill:'#000000'}}],fixed);
+ assert.deepEqual(commands,[{type:'create',node:header}],'a reverted-only update is dropped and the create carries the neutral colours');
+ // Direction also moves a container: the move is undone, the styling stays.
+ const direction=structuredClone(base.document);direction.nodes[0].fill='#f3f4f6';direction.nodes[0].name='Renamed';
+ const styled=normalizeStageEdit({...base,stage:1},direction);
+ assert.doesNotThrow(()=>validateStageEdit({...base,stage:1},styled));
+ assert.equal(styled.nodes[0].fill,'#f3f4f6');assert.equal(styled.nodes[0].name,base.document.nodes[0].name);
+ // Copy also recolours text: the text change stays, the colour is undone.
+ const copy=structuredClone(base.document);copy.nodes[1].text='Hello';copy.nodes[1].textColor='#ff0000';
+ const copied=normalizeStageEdit({...base,stage:3},copy);
+ assert.doesNotThrow(()=>validateStageEdit({...base,stage:3},copied));
+ assert.equal(copied.nodes[1].text,'Hello');assert.equal(copied.nodes[1].textColor,base.document.nodes[1].textColor);
+ // Genuine structural violations still fail.
+ assert.throws(()=>validateStageEdit(base,normalizeStageEdit(base,structuredClone(copy))),/structural containers only/);
 });
 test('screen identifier remains locked for creation, deletion and reparenting',()=>{
  const base=state(2);

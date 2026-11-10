@@ -1,4 +1,5 @@
 import { studioUser } from '@/lib/studio/supabase';
+import { scheduleWorker } from '@/lib/studio/worker-trigger';
 import { taskDisplay } from '@/lib/studio/task-display';
 import { dailyLimitWait } from '@/lib/studio/task-wait';
 import { taskReviewStatuses } from '@/lib/studio/review-state';
@@ -80,5 +81,6 @@ export async function PATCH(request:Request) {
  if(error||!data) return json({error:'The task could not be updated.'},503);
  if(data.status==='not_found') return json({error:'Task not found.'},404);
  if(data.status==='invalid_transition') return json({error:'The task changed. Refresh and try again.'},409);
+ if(body.action==='retry') scheduleWorker();
  return json({ok:true});
 }

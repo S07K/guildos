@@ -3,7 +3,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Alert, Button, Divider, Stack, TextField } from '@mui/material';
 import { configureBrowserAuth, signInWithGoogle } from '@/lib/auth/browser';
-import { createProject, saveProviderKey, removeProviderKey, saveOpenRouterKey, removeOpenRouterKey, saveGroqKey, removeGroqKey, sendCode, verifyCode } from '@/app/studio/actions';
+import { createProject, saveProviderKey, removeProviderKey, saveOpenRouterKey, removeOpenRouterKey, saveGroqKey, removeGroqKey, saveAnthropicKey, removeAnthropicKey, sendCode, verifyCode } from '@/app/studio/actions';
 function useFieldErrors() {
  const [errors,setErrors]=useState<Record<string,string>>({});
  function validate(form: HTMLFormElement) {
@@ -33,13 +33,13 @@ export function SignInForm({config,nextUrl='/studio',initialError=''}:{config:{u
   {sent&&<Button type="button" disabled={pending} onClick={()=>{setSent(false);setError('');}}>Use another email or request a new code</Button>}
  </Stack>;
 }
-export function ProjectForm() {
+export function ProjectForm({ defaultBrief = '' }: { defaultBrief?: string }) {
  const {validate,field}=useFieldErrors();
  const [error,setError]=useState('');const [pending,start]=useTransition();
  return <Stack component="form" noValidate spacing={3} onSubmit={event=>{event.preventDefault();if(!validate(event.currentTarget))return;const form=new FormData(event.currentTarget);setError('');start(async()=>{try{const result=await createProject(form);if(result?.error)setError(result.error);}catch{setError('Your brief could not be saved. Please try again.');}});}}>
-  <TextField {...field("name")} label="Project name" name="name" required placeholder="Give your idea a name" slotProps={{htmlInput:{maxLength:100}}}/>
-  <TextField {...field("brief")} label="Your creative brief" name="brief" required multiline rows={7} placeholder="What are you building? Who is it for? Describe the tone, benefits, and the action visitors should take." slotProps={{htmlInput:{minLength:20,maxLength:12000}}}/>
-  {error&&<Alert severity="error">{error}</Alert>}<Button variant="contained" type="submit" disabled={pending}>{pending?'Saving your brief…':'Create project'}</Button>
+  <TextField {...field("name")} label="Project name (optional)" name="name" placeholder="We’ll name it from your brief" slotProps={{htmlInput:{maxLength:100}}}/>
+  <TextField {...field("brief")} label="Your creative brief" name="brief" required multiline rows={7} defaultValue={defaultBrief} placeholder="What are you building? Who is it for? Describe the tone, benefits, and the action visitors should take." slotProps={{htmlInput:{minLength:20,maxLength:12000}}}/>
+  {error&&<Alert severity="error">{error}</Alert>}<Button variant="contained" type="submit" disabled={pending}>{pending?'Briefing your guild…':'Create project'}</Button>
  </Stack>;
 }
 export function KeyForm({connected,onSaved,onRemoved}:{connected:boolean;onSaved?:(suffix:string)=>void;onRemoved?:()=>void}) {
@@ -69,5 +69,15 @@ export function GroqKeyForm({connected,onSaved,onRemoved}:{connected:boolean;onS
   <TextField {...field("key")} label={connected?'Replace Groq API key':'Groq API key'} name="key" type="password" required autoComplete="off" placeholder="gsk_…" slotProps={{htmlInput:{maxLength:504,spellCheck:false}}}/>
   {error&&<Alert severity="error">{error}</Alert>}{message&&<Alert severity="success" role="status">{message}</Alert>}
   <Stack direction="row" spacing={1.5}><Button variant="contained" type="submit" disabled={pending}>{pending?'Connecting…':'Save key'}</Button>{connected&&<Button type="button" variant="outlined" color="error" disabled={pending} onClick={()=>{setError('');setMessage('');start(async()=>{try{const result=await removeGroqKey();if(result.error)setError(result.error);else{setMessage('Groq disconnected.');onRemoved?.();router.refresh();}}catch{setError('Unable to remove your Groq key.');}});}}>Remove key</Button>}</Stack>
+ </Stack>;
+}
+
+export function ClaudeKeyForm({connected,onSaved,onRemoved}:{connected:boolean;onSaved?:(suffix:string)=>void;onRemoved?:()=>void}) {
+ const {validate,field}=useFieldErrors();
+ const [message,setMessage]=useState('');const [error,setError]=useState('');const [pending,start]=useTransition();const router=useRouter();
+ return <Stack component="form" noValidate spacing={2.5} onSubmit={event=>{event.preventDefault();if(!validate(event.currentTarget))return;const element=event.currentTarget;const data=new FormData(element);setError('');setMessage('');start(async()=>{try{const result=await saveAnthropicKey(data);if(result.error)setError(result.error);else{const savedKey=String(data.get('key')||'');element.reset();setMessage('Claude is connected and available for agent tasks.');onSaved?.(savedKey.slice(-4));router.refresh();}}catch{setError('Unable to connect Claude. Please try again.');}});}}>
+  <TextField {...field("key")} label={connected?'Replace Claude API key':'Claude API key'} name="key" type="password" required autoComplete="off" placeholder="sk-ant-…" slotProps={{htmlInput:{maxLength:504,spellCheck:false}}}/>
+  {error&&<Alert severity="error">{error}</Alert>}{message&&<Alert severity="success" role="status">{message}</Alert>}
+  <Stack direction="row" spacing={1.5}><Button variant="contained" type="submit" disabled={pending}>{pending?'Connecting…':'Save key'}</Button>{connected&&<Button type="button" variant="outlined" color="error" disabled={pending} onClick={()=>{setError('');setMessage('');start(async()=>{try{const result=await removeAnthropicKey();if(result.error)setError(result.error);else{setMessage('Claude disconnected.');onRemoved?.();router.refresh();}}catch{setError('Unable to remove your Claude key.');}});}}>Remove key</Button>}</Stack>
  </Stack>;
 }

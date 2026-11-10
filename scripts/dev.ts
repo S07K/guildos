@@ -32,7 +32,18 @@ function launch(file: string, args: string[], env: NodeJS.ProcessEnv, nodeArgs: 
 process.on('SIGINT', () => stop());
 process.on('SIGTERM', () => stop());
 
+// Bring the local database schema up to date before anything talks to it.
+function migrate() {
+ return new Promise<void>((done, fail) => {
+  const child = spawn(process.execPath, [resolve('scripts/migrate.ts'), '--dev'], { env: process.env, stdio: 'inherit' });
+  child.once('error', fail);
+  child.once('exit', code => code === 0 ? done() : fail(new Error('Development startup stopped: database migrations did not apply.')));
+ });
+}
+
 async function start() {
+ await migrate();
+ if (stopping) return;
  const env = { ...process.env };
  env.NODE_ENV ||= 'development';
  // Codex-managed authentication is confined to the local development runner.

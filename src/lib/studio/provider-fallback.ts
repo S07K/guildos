@@ -1,6 +1,6 @@
-export type ModelProvider = 'api' | 'chatgpt' | 'openrouter' | 'groq';
+export type ModelProvider = 'api' | 'chatgpt' | 'anthropic' | 'openrouter' | 'groq';
 
-export const providerPriority: readonly ModelProvider[] = ['chatgpt', 'groq', 'openrouter', 'api'];
+export const providerPriority: readonly ModelProvider[] = ['chatgpt', 'anthropic', 'groq', 'openrouter', 'api'];
 export function preferredProvider(available: Partial<Record<ModelProvider, boolean>>): ModelProvider {
  return providerPriority.find(provider => available[provider]) || 'api';
 }

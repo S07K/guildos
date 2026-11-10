@@ -10,6 +10,7 @@ import { hasChatGPTPlan, chatGPTConnection } from '../chatgpt-oauth.ts';
 import { agentIdentity, type AgentRole } from '../agent-roles.ts';
 import { initialPipeline, PipelineGateError, pipelineRoles, stageInstructions, advanceDraft, rejectOrApprove, type PipelineState } from './pipeline.ts';
 import { proposeCanvasWork, auditPipeline, ProviderFailure } from './proposal.ts';
+import { trialConfig, claimTrialRun, releaseTrialRun, trialExhaustedMessage,noModelMessage } from '../trial.ts';
 
 function devWorkerLog(event:string,details:Record<string,unknown>={}) {
  if(process.env.NODE_ENV==='development') console.info('[GuildOS worker]',JSON.stringify({time:new Date().toISOString(),event,...details},null,2));
@@ -29,6 +30,7 @@ export async function runNextTask(client:SupabaseClient, propose=proposeCanvasWo
  let reserved=false;
  let heartbeat:ReturnType<typeof setInterval>|undefined;
  let activityAvailable=true;
+ let trialRun:string|null=null;
  const event=async(kind:'status'|'handoff'|'result'|'error',body:string,recipient?:AgentRole)=>{
   if(!activityAvailable) return;
   try {
@@ -46,7 +48,10 @@ export async function runNextTask(client:SupabaseClient, propose=proposeCanvasWo
   if(saved.data?.status==='stale') abort.abort();
   return saved.data;
  };
- const blocked=async(summary:string)=>{await event('error',summary);return finish({mode:'blocked',summary:summary.slice(0,2000),model:'manual-edit',input_tokens:0,output_tokens:0});};
+ const blocked=async(summary:string)=>{
+  // A root trial run that produced nothing for the user is given back.
+  if(trialRun&&trialRun===task.id) await releaseTrialRun(client,task.workspace_id,trialRun);
+  await event('error',summary);return finish({mode:'blocked',summary:summary.slice(0,2000),model:'manual-edit',input_tokens:0,output_tokens:0});};
  try {
   await event('status',`${agentIdentity[role].persona} picked up this task · attempt ${task.attempts} of 3.`);
   const budget=await client.rpc('reserve_studio_generation',{workspace:task.workspace_id,token});
@@ -67,33 +72,43 @@ export async function runNextTask(client:SupabaseClient, propose=proposeCanvasWo
    if(checking) return;checking=true;
    try {const result=await client.rpc('heartbeat_studio_task',{p_task:task.id,p_token:token});if(result.error||!result.data) abort.abort();}
    catch {abort.abort();} finally {checking=false;}
-  },20000);
-  const [projectResult,versionResult,notesResult,keyResult,routerResult,groqResult]=await Promise.all([
+  },5000); // Short interval: a user's Stop takes effect within seconds.
+  const [projectResult,versionResult,notesResult,keyResult,routerResult,groqResult,claudeResult]=await Promise.all([
    client.from('studio_projects').select('brief').eq('id',task.project_id).eq('workspace_id',task.workspace_id).single(),
    client.from('studio_versions').select('id,document').eq('project_id',task.project_id).eq('workspace_id',task.workspace_id).order('created_at',{ascending:false}).order('id',{ascending:false}).limit(1).maybeSingle(),
    client.from('studio_agent_notes').select('id,author_role,body').eq('project_id',task.project_id).eq('workspace_id',task.workspace_id).order('created_at',{ascending:false}).limit(30),
    client.from('studio_keys').select('ciphertext').eq('workspace_id',task.workspace_id).maybeSingle(),
    client.from('studio_openrouter_keys').select('ciphertext,model').eq('workspace_id',task.workspace_id).maybeSingle(),
    client.from('studio_groq_keys').select('ciphertext,model').eq('workspace_id',task.workspace_id).maybeSingle(),
+   client.from('studio_anthropic_keys').select('ciphertext,model').eq('workspace_id',task.workspace_id).maybeSingle(),
   ]);
-  if(projectResult.error||versionResult.error||notesResult.error||keyResult.error||(routerResult.error&&routerResult.error.code!=='PGRST205')||(groqResult.error&&groqResult.error.code!=='PGRST205')) throw new Error('Project context could not be loaded.');
+  if(projectResult.error||versionResult.error||notesResult.error||keyResult.error||(routerResult.error&&routerResult.error.code!=='PGRST205')||(groqResult.error&&groqResult.error.code!=='PGRST205')||(claudeResult.error&&claudeResult.error.code!=='PGRST205')) throw new Error('Project context could not be loaded.');
   const version=versionResult.data;
   if(version&&!isCanvas(version.document)) {await blocked('This project uses a legacy landing-page document. Save a canvas before assigning canvas work.');return true;}
   const document=version?.document||blankCanvas();
 
   if(JSON.stringify(document).length>120000) {await blocked('This canvas is too large for one agent task. Split the work into smaller tasks.');return true;}
-  type Connection={key:string;model:string;provider:'openai'|'openrouter'|'groq';chatgptPlan?:boolean;request?:typeof fetch};
+  type Connection={key:string;model:string;provider:'openai'|'openrouter'|'groq'|'anthropic';chatgptPlan?:boolean;trial?:boolean;request?:typeof fetch};
   const connections:Connection[]=[];
+  if(claudeResult.data) connections.push({key:openKey(claudeResult.data.ciphertext,task.workspace_id),model:process.env.STUDIO_ANTHROPIC_MODEL||claudeResult.data.model,provider:'anthropic'});
   if(groqResult.data) connections.push({key:openKey(groqResult.data.ciphertext,task.workspace_id),model:groqResult.data.model,provider:'groq'});
   if(routerResult.data) connections.push({key:openKey(routerResult.data.ciphertext,task.workspace_id),model:routerResult.data.model,provider:'openrouter'});
   if(keyResult.data) connections.push({key:openKey(keyResult.data.ciphertext,task.workspace_id),model:process.env.STUDIO_OPENAI_MODEL||'gpt-4.1-mini',provider:'openai'});
   if(await hasChatGPTPlan(task.workspace_id)) {connections.push({...await chatGPTConnection(task.workspace_id),provider:'openai',chatgptPlan:true});}
   connections.sort((a,b)=>providerPriority.indexOf(a.chatgptPlan?'chatgpt':a.provider==='openai'?'api':a.provider)-providerPriority.indexOf(b.chatgptPlan?'chatgpt':b.provider==='openai'?'api':b.provider));
-  if(!connections.length) {await blocked('Connect Groq, OpenRouter, an OpenAI API key, or a supported ChatGPT connection, then retry this task.');return true;}
+  if(!connections.length) {
+   // No workspace connection: fall back to the platform's free-trial key, if configured.
+   const trial=trialConfig();
+   if(!trial) {await blocked(noModelMessage);return true;}
+   const runId=task.parent_task_id||task.id;
+   if(!await claimTrialRun(client,task.workspace_id,runId,trial)) {await blocked(trialExhaustedMessage);return true;}
+   trialRun=runId;
+   connections.push({key:trial.key,model:trial.model,provider:trial.provider,trial:true});
+  }
   let active=connections[0];
   const withProviderFallback=async<T>(run:(connection:Connection)=>Promise<T>):Promise<T>=>{
    let lastError:unknown;
-   const label=(connection:Connection)=>connection.provider==='groq'?'Groq':connection.provider==='openrouter'?'OpenRouter':connection.chatgptPlan?'ChatGPT':'OpenAI API';
+   const label=(connection:Connection)=>connection.trial?'the GuildOS trial model':connection.provider==='anthropic'?'Claude':connection.provider==='groq'?'Groq':connection.provider==='openrouter'?'OpenRouter':connection.chatgptPlan?'ChatGPT':'OpenAI API';
    for(let index=0;index<connections.length;index++) {
     const connection=connections[index];
     active=connection;

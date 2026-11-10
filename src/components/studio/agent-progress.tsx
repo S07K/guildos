@@ -13,7 +13,9 @@ type Task = { source_note_id?:string; wait?:TaskWait|null; id:string; parent_tas
 type TaskEvent = {id:number;task_id:string;kind:'status'|'handoff'|'result'|'error';speaker_role:AgentRole|null;recipient_role:AgentRole|null;body:string;created_at:string};
 export type ReviewFeedback = { instruction:string; summary:string; versionId:string|null };
 
-export function AgentProgress({projectId,onRequestChanges,onTaskWaits,onWorkingAgents,revisionNotes=[],conversationLoaded=true}:{onWorkingAgents?:(roles:AgentRole[])=>void;onTaskWaits?:(waits:WaitingMessage[])=>void;revisionNotes?:readonly {author_role:string;body:string;created_at:string}[];conversationLoaded?:boolean;projectId:string;onRequestChanges?:(feedback:ReviewFeedback)=>void}) {
+export type StoppedTask = {id:string;instruction:string};
+
+export function AgentProgress({projectId,onRequestChanges,onTaskWaits,onWorkingAgents,onActiveTasks,onStoppedTask,revisionNotes=[],conversationLoaded=true}:{onWorkingAgents?:(roles:AgentRole[])=>void;onActiveTasks?:(ids:string[])=>void;onStoppedTask?:(task:StoppedTask|null)=>void;onTaskWaits?:(waits:WaitingMessage[])=>void;revisionNotes?:readonly {author_role:string;body:string;created_at:string}[];conversationLoaded?:boolean;projectId:string;onRequestChanges?:(feedback:ReviewFeedback)=>void}) {
  const containerRef=useRef<HTMLDivElement>(null);
  const [tasks,setTasks]=useState<Task[]>([]);
  const [events,setEvents]=useState<TaskEvent[]>([]);
@@ -50,6 +52,13 @@ export function AgentProgress({projectId,onRequestChanges,onTaskWaits,onWorkingA
   for(const event of events)if(event.kind==='status'&&event.speaker_role)currentRole.set(event.task_id,event.speaker_role);
   onWorkingAgents?.([...new Set(tasks.filter(task=>task.status==='running').map(task=>currentRole.get(task.id)||task.agent_role))]);
  },[tasks,events,error,onWorkingAgents]);
+ useEffect(()=>{
+  // Root tasks the user can stop, and the latest root task if the user stopped it.
+  const rootTasks=tasks.filter(task=>!task.parent_task_id);
+  onActiveTasks?.(error?[]:rootTasks.filter(task=>['queued','running','delegated'].includes(task.status)).map(task=>task.id));
+  const latest=[...rootTasks].sort((a,b)=>b.created_at.localeCompare(a.created_at))[0];
+  onStoppedTask?.(latest?.status==='cancelled'?{id:latest.id,instruction:latest.instruction}:null);
+ },[tasks,error,onActiveTasks,onStoppedTask]);
  useEffect(()=>{onTaskWaits?.(tasks.flatMap(task=>task.source_note_id&&task.status==='queued'&&task.wait?[{noteId:task.source_note_id,wait:task.wait}]:[]));},[tasks,onTaskWaits]);
  async function action(task:Task,action:'approve'|'retry'|'cancel') {
   if(submitting.current)return;

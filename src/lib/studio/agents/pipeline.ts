@@ -33,6 +33,51 @@ export function initialPipeline(document:CanvasDocument,instruction:string,baseV
  return {executionMode:revision?'SURGICAL_REVISION':!screenRoot(document,targetScreenId)?'CREATE_NEW_SCREEN':'EDIT_SCREEN',revisionScope,targetLayerId,stage:0,action:0,round:0,targetScreenId,baseVersionId,document,commands:[],issues:[],newScreenTransition:!screenRoot(document,targetScreenId)};
 }
 const changedKeys=(a:CanvasNode,b:CanvasNode)=>Object.keys({...a,...b}).filter(key=>!isDeepStrictEqual(a[key as keyof CanvasNode],b[key as keyof CanvasNode]));
+const surfaceKeys=['fill','backgroundColor','stroke','strokeWidth','textColor','opacity'] as const;
+const neutralSurface={fill:'#ffffff',stroke:'#d1d5db',textColor:'#202b38'};
+const restoreKeys=(old:CanvasNode,node:CanvasNode,keys:readonly string[]):CanvasNode=>{
+ const next={...node} as Record<string,unknown>,previous=old as unknown as Record<string,unknown>;
+ for(const key of keys){if(key in previous)next[key]=previous[key];else delete next[key];}
+ return next as unknown as CanvasNode;
+};
+/**
+ * Mechanically undoes edits outside a stage's remit instead of failing the run.
+ * Models often restyle while structuring or nudge layout while styling; those
+ * slips are corrected here, and only genuine violations reach validateStageEdit.
+ */
+export function normalizeStageEdit(state:PipelineState,after:CanvasDocument):CanvasDocument {
+ const before=new Map(state.document.nodes.map(node=>[node.id,node]));
+ const nodes=after.nodes.map(node=>{
+  const old=before.get(node.id);
+  if(old&&isDeepStrictEqual(old,node))return node;
+  if(state.stage===0&&node.type==='container'){
+   if(!old)return {...node,...neutralSurface};
+   if(old.type==='container'||old.type==='frame')return restoreKeys(old,node,surfaceKeys.filter(key=>!isDeepStrictEqual(old[key],node[key])));
+  }
+  if(state.stage===1&&old&&old.type==='container'&&node.type==='container'){
+   const allowed=['fill','backgroundColor','stroke','strokeWidth','radius','opacity'];
+   return restoreKeys(old,node,changedKeys(old,node).filter(key=>!allowed.includes(key)));
+  }
+  if(state.stage===3&&old&&old.type===node.type){
+   const keys=changedKeys(old,node).filter(key=>key!=='text'||!['text','button','input'].includes(node.type));
+   return restoreKeys(old,node,keys);
+  }
+  return node;
+ });
+ return {...after,nodes};
+}
+/** Keeps the audit commands in step with a normalized document. */
+export function alignStageCommands(base:CanvasDocument,commands:CanvasCommand[],document:CanvasDocument):CanvasCommand[] {
+ const before=new Map(base.nodes.map(node=>[node.id,node])),after=new Map(document.nodes.map(node=>[node.id,node]));
+ return commands.flatMap((command):CanvasCommand[]=>{
+  if(command.type==='create'){const node=after.get(command.node.id);return node?[{type:'create',node}]:[];}
+  if(command.type!=='update')return [command];
+  const old=before.get(command.id),node=after.get(command.id);
+  if(!old||!node)return [command];
+  const patch=Object.fromEntries(Object.keys(command.patch).filter(key=>!isDeepStrictEqual(old[key as keyof CanvasNode],node[key as keyof CanvasNode])).map(key=>[key,node[key as keyof CanvasNode]]));
+  return Object.keys(patch).length?[{type:'update',id:command.id,patch}]:[];
+ });
+}
 export function validateStageEdit(state:PipelineState,after:CanvasDocument) {
  if(state.revisionScope)assertRevisionScope(state.revisionScope,after);
  const before=new Map(state.document.nodes.map(node=>[node.id,node]));

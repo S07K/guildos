@@ -5,13 +5,15 @@ import { Alert, Avatar, Box, Button, Chip, Skeleton, IconButton, Paper, Stack, T
 import { AccountContext } from './account-menu';
 import { conversationSegments } from '@/lib/studio/conversation-highlights';
 import { dropdownSurfaceSx } from './dropdown-surface';
-import { ArrowUp, Hash, X } from 'lucide-react';
+import { ArrowUp, Hash, Square, X } from 'lucide-react';
 import { agentRoles, agentIdentity, type AgentRole, type AgentAnchor } from '@/lib/studio/agent-roles';
-import { AgentProgress, type ReviewFeedback, type WaitingMessage } from './agent-progress';
+import { AgentProgress, type ReviewFeedback, type StoppedTask, type WaitingMessage } from './agent-progress';
 import { AgentWorkingIndicator } from './agent-working-indicator';
 import { TaskWaitNotice } from './task-wait-notice';
 import { AgentMark } from './agent-identity';
 import { ConversationSkeleton } from './loading-states';
+import Link from 'next/link';
+import type { TrialStatus } from '@/lib/studio/trial';
 
 export type GuildNote = { id: string; version_id: string | null; author_role: AgentRole | 'human'; mentioned_role: AgentRole | null; anchor: AgentAnchor; body: string; displayContent?: string; created_at: string };
 const names: Record<AgentRole | 'human', string> = { human: 'You', ...Object.fromEntries(agentRoles.map(role => [role, agentIdentity[role].persona])) } as Record<AgentRole | 'human', string>;
@@ -29,12 +31,15 @@ async function conversationData(response:Response) {
  catch{throw new Error('The project conversation returned an invalid response. Please retry.');}
 }
 
-export function GuildPanel({ projectId, versionId, layers: layerOptions = [], addedNotes = [], initialMention = null, onInitialMentionUsed, selectedContext = null }: { projectId: string; versionId: string | null; layers?: { id: string; name: string }[]; addedNotes?: GuildNote[]; initialMention?: AgentRole | null; onInitialMentionUsed?: () => void; selectedContext?: { id: string; name: string } | null }) {
+export function GuildPanel({ projectId, versionId, layers: layerOptions = [], addedNotes = [], initialMention = null, onInitialMentionUsed, selectedContext = null, trial = null }: { trial?: TrialStatus | null; projectId: string; versionId: string | null; layers?: { id: string; name: string }[]; addedNotes?: GuildNote[]; initialMention?: AgentRole | null; onInitialMentionUsed?: () => void; selectedContext?: { id: string; name: string } | null }) {
  const { avatarUrl } = useContext(AccountContext);
  const [conversationLoaded, setConversationLoaded] = useState(false);
  const [notes, setNotes] = useState<GuildNote[]>(addedNotes);
  const [text, setText] = useState('');
  const [workingAgents, setWorkingAgents] = useState<AgentRole[]>([]);
+ const [activeTaskIds, setActiveTaskIds] = useState<string[]>([]);
+ const [stoppedTask, setStoppedTask] = useState<StoppedTask|null>(null);
+ const [stopping, setStopping] = useState(false);
  const [taskWaits, setTaskWaits] = useState<WaitingMessage[]>([]);
  const [reviewFeedback, setReviewFeedback] = useState<ReviewFeedback|null>(null);
  const [composerContext, setComposerContext] = useState(selectedContext);
@@ -153,6 +158,20 @@ export function GuildPanel({ projectId, versionId, layers: layerOptions = [], ad
   } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not send this message.'); }
   finally { sending.current = false; setSaving(false); }
  }
+ async function controlTasks(ids: string[], action: 'cancel' | 'retry') {
+  if (!ids.length || stopping) return;
+  setStopping(true); setError('');
+  try {
+   const results = await Promise.all(ids.map(taskId => fetch('/api/studio/tasks', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ taskId, action }) })));
+   // 409: the task already finished or changed; the refresh shows its real state.
+   const failed = results.find(response => !response.ok && response.status !== 409);
+   if (failed) throw new Error(((await failed.json().catch(() => ({}))) as { error?: string }).error || (action === 'cancel' ? 'Could not stop the guild.' : 'Could not resume the task.'));
+   if (action === 'cancel') setActiveTaskIds([]);
+   if (action === 'retry') setStoppedTask(null);
+  } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not update the task.'); }
+  finally { setStopping(false); window.dispatchEvent(new Event('guildos:tasks-updated')); }
+ }
+ const canStop = activeTaskIds.length > 0 && !text.trim() && !saving;
  const suggestions = mentionQuery === null ? [] : agentRoles.filter(role => `${agentIdentity[role].persona} ${agentIdentity[role].name}`.toLowerCase().includes(mentionQuery.toLowerCase()));
  const layerSuggestions = layerQuery === null ? [] : layerOptions.filter(item => item.name.toLowerCase().includes(layerQuery.toLowerCase())).slice(0, 8);
  const highlightTerms = useMemo(() => [...agentRoles.map(role => `@${agentIdentity[role].persona}`), ...layerOptions.map(item => `#${item.name}`)].sort((a, b) => b.length - a.length), [layerOptions]);
@@ -180,11 +199,18 @@ export function GuildPanel({ projectId, versionId, layers: layerOptions = [], ad
      {note.author_role !== 'human' && note.anchor !== 'page' && <Chip size="small" label={note.anchor} sx={{ mt: .6, height: 21, fontSize: 10 }}/>}
     </Box>
    </Stack>)}</Stack> : <Box sx={{ minHeight: 120, display: 'grid', placeItems: 'center', px: 3 }}><Stack spacing={1} sx={{ textAlign: 'center', maxWidth: 300 }}><Typography variant="subtitle1" sx={{ fontWeight: 700 }}>Start the project conversation</Typography><Typography variant="body2" color="text.secondary">Share direction with the guild, or mention a specialist with @ to bring them in.</Typography></Stack></Box>}
-   <AgentProgress projectId={projectId} onRequestChanges={requestChanges} onTaskWaits={setTaskWaits} onWorkingAgents={setWorkingAgents} revisionNotes={notes} conversationLoaded={conversationLoaded}/>
+   <AgentProgress projectId={projectId} onRequestChanges={requestChanges} onTaskWaits={setTaskWaits} onWorkingAgents={setWorkingAgents} onActiveTasks={setActiveTaskIds} onStoppedTask={setStoppedTask} revisionNotes={notes} conversationLoaded={conversationLoaded}/>
   </Box>
   {error && <Alert severity="error" sx={{ mx: 2, mb: 1 }}>{error}</Alert>}
+  {trial && <Alert severity={trial.remaining ? 'info' : 'warning'} sx={{ mx: 2, mb: 1 }} action={<Button component={Link} href="/studio/settings" size="small" color="inherit">Connect</Button>}>
+   {trial.enabled && trial.remaining
+    ? `Free trial: ${trial.remaining} of ${trial.limit} design runs left. No API key needed.`
+    : trial.enabled ? 'Your free runs are used up. Connect a model to keep going. Groq and OpenRouter have free tiers.'
+    : 'Connect a model to let the guild work.'}
+  </Alert>}
   <Box sx={{ borderTop: '1px solid', borderColor: 'divider', p: 1.5, bgcolor: '#fbfcfb' }}>
    <AgentWorkingIndicator roles={workingAgents}/>
+   {!activeTaskIds.length && stoppedTask && <Stack direction="row" role="status" spacing={1} sx={{ alignItems: 'center', mb: 1, minHeight: 28, minWidth: 0 }}><Typography variant="caption" color="text.secondary" sx={{ flex: 1, minWidth: 0 }}>You stopped the guild. Send an update, or resume where it left off.</Typography><Button size="small" disabled={stopping} onClick={() => void controlTasks([stoppedTask.id], 'retry')} sx={{ flex: 'none', minWidth: 0, py: .25 }}>Resume</Button></Stack>}
    <Box sx={{ position: 'relative', p: 1.25, border: '1px solid #dfe6e1', borderRadius: '8px', bgcolor: 'background.paper', transition: 'border-color 120ms ease, box-shadow 120ms ease', '&:focus-within': { borderColor: '#789783', boxShadow: '0 0 0 3px rgba(56,102,80,.08)' } }}>
     <Box sx={{ minWidth: 0, position: 'relative', px: 1, py: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
      {(suggestions.length > 0 || layerSuggestions.length > 0) && <Paper role="listbox" aria-label={mentionQuery !== null ? 'Mention an agent' : 'Mention a layer'} sx={{ ...dropdownSurfaceSx, position: 'absolute', zIndex: 4, bottom: 'calc(100% + 12px)', left: 0, right: 0, boxSizing: 'border-box', maxHeight: 260, overflowX: 'hidden', overflowY: 'auto', p: .5 }}>{suggestions.map((role, index) => <Button key={role} ref={index === activeSuggestionIndex ? activeOptionRef : undefined} role="option" aria-selected={index === activeSuggestionIndex} onClick={() => insertMention(role)} fullWidth sx={{ minWidth: 0, justifyContent: 'flex-start', textTransform: 'none', color: 'text.primary', px: 1, py: .75, textAlign: 'left', bgcolor: index === activeSuggestionIndex ? '#f0f4f1' : 'transparent', '&:hover': { bgcolor: '#f0f4f1' } }}><Box sx={{ flex: 'none', lineHeight: 0 }}><AgentMark role={role} size={30}/></Box><Box sx={{ ml: 1, minWidth: 0, textAlign: 'left' }}><Typography variant="body2" noWrap sx={{ fontWeight: 700, lineHeight: 1.2 }}>{agentIdentity[role].persona}</Typography><Typography variant="caption" noWrap color="text.secondary">{agentIdentity[role].name}</Typography></Box></Button>)}{layerSuggestions.map((item, index) => <Button key={item.id} ref={index === activeSuggestionIndex ? activeOptionRef : undefined} role="option" aria-selected={index === activeSuggestionIndex} onClick={() => insertLayer(item.id,item.name)} fullWidth sx={{ minWidth: 0, justifyContent: 'flex-start', textTransform: 'none', color: 'text.primary', px: 1, py: .75, textAlign: 'left', bgcolor: index === activeSuggestionIndex ? '#f0f4f1' : 'transparent', '&:hover': { bgcolor: '#f0f4f1' } }}><Box sx={{ width: 30, height: 30, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: 1, bgcolor: '#eef3ef', color: 'primary.main' }}><Hash size={16}/></Box><Box sx={{ ml: 1, minWidth: 0, textAlign: 'left' }}><Typography variant="body2" noWrap sx={{ fontWeight: 650, lineHeight: 1.2 }}>{item.name}</Typography><Typography variant="caption" noWrap color="text.secondary">Layer</Typography></Box></Button>)}</Paper>}
@@ -196,7 +222,8 @@ export function GuildPanel({ projectId, versionId, layers: layerOptions = [], ad
      </Box>
     </Box>
     <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'flex-end', mt: .5, minWidth: 0 }}>
-     <IconButton aria-label="Send message" color="primary" disabled={!text.trim() || saving} onClick={() => void submit()} sx={{ width: 32, height: 32, flex: 'none', borderRadius: '8px', bgcolor: 'primary.main', color: 'primary.contrastText', '&:hover': { bgcolor: 'primary.dark' }, '&.Mui-disabled': { bgcolor: 'action.disabledBackground', color: 'action.disabled' } }}>{saving ? <Skeleton variant="rounded" width={15} height={15} sx={{bgcolor:'currentColor',opacity:.5}}/> : <ArrowUp size={17}/>}</IconButton>
+     {canStop ? <IconButton aria-label="Stop the guild" title="Stop the current task" disabled={stopping} onClick={() => void controlTasks(activeTaskIds, 'cancel')} sx={{ width: 32, height: 32, flex: 'none', borderRadius: '8px', bgcolor: '#202b38', color: '#fff', '&:hover': { bgcolor: '#000' }, '&.Mui-disabled': { bgcolor: 'action.disabledBackground', color: 'action.disabled' } }}><Square size={12} fill="currentColor"/></IconButton>
+     : <IconButton aria-label="Send message" color="primary" disabled={!text.trim() || saving} onClick={() => void submit()} sx={{ width: 32, height: 32, flex: 'none', borderRadius: '8px', bgcolor: 'primary.main', color: 'primary.contrastText', '&:hover': { bgcolor: 'primary.dark' }, '&.Mui-disabled': { bgcolor: 'action.disabledBackground', color: 'action.disabled' } }}>{saving ? <Skeleton variant="rounded" width={15} height={15} sx={{bgcolor:'currentColor',opacity:.5}}/> : <ArrowUp size={17}/>}</IconButton>}
     </Stack>
    </Box>
   </Box>
