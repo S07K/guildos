@@ -14,6 +14,33 @@ For automated production migrations and Vercel deployment, follow [Production de
 6. Run `npm run dev`, open `/signin`, request a code, and sign in. In Connections, paste an OpenRouter or OpenAI API key. OpenRouter keys are verified through its key endpoint before encrypted storage. OpenRouter is used after ChatGPT and Groq for new agent tasks, project generation, and specialist chat, using `nvidia/nemotron-3-super-120b-a12b:free`. Apply `202610160006_studio_openrouter_free_default.sql` to switch existing OpenRouter connections from the former paid default. The generator and specialist chat can fall back to another connected provider on a usage limit. The OpenAI default model is `gpt-4.1-mini`; optionally configure `STUDIO_OPENAI_MODEL` with a Responses API model that supports strict structured outputs.
 7. Meet the five specialists on the new-project screen, then save a project with a title, a detailed brief, and a real HTTPS button destination. Run the guild, open the Guild tab to read role comments, and leave a section comment or mention a specialist before the next revision. Open a project conversation, mention a specialist, and send a build instruction. The local `npm run dev` command starts the agent worker alongside the web app when Supabase server credentials are configured. Work from the Tasks page, then approve or continue revising the saved canvas. Switch between saved versions and export HTML. Verify a second account cannot see the first account's projects or comments.
 
+## Hosted worker (production, no extra server)
+
+On Vercel there is no always-on process, so agent tasks run in short invocations of `POST /api/worker`:
+
+- When a message or brief is queued (or a task is retried), the app calls the endpoint after responding. The endpoint replies `202` immediately and drains the queue in the background for up to ~200 seconds (function limit 300s), handing over to a fresh invocation if work remains.
+- Every minute, Supabase `pg_cron` + `pg_net` call the endpoint, but only while work is queued or a lease expired, so retries, deferred tasks and interrupted runs resume. Migration `202611100001_studio_worker_schedule.sql` installs this; without the Vault secrets below it does nothing.
+- The endpoint is outside `/api/studio/` (which requires a browser session) and accepts only `Authorization: Bearer $STUDIO_WORKER_SECRET`.
+
+One-time setup:
+
+1. Generate a secret: `openssl rand -hex 32`.
+2. Vercel → Project → Settings → Environment Variables: add `STUDIO_WORKER_SECRET` (Production, Sensitive). `STUDIO_APP_URL` must be the production origin.
+3. Production Supabase → SQL editor:
+   `select vault.create_secret('https://www.guildos.design/api/worker', 'guildos_worker_url');`
+   `select vault.create_secret('<the same secret>', 'guildos_worker_secret');`
+4. Deploy (the workflow applies the migration). Check runs with `select * from cron.job_run_details order by start_time desc limit 5;` and responses with `select status_code, created from net._http_response order by created desc limit 5;`.
+
+Local development is unchanged: `npm run dev` runs the worker process, and the hosted trigger is disabled outside Vercel.
+
+## Claude connection
+
+Connections → Claude accepts an Anthropic API key from the Claude Console (`sk-ant-…`); the key is verified against the model, encrypted with the workspace vault key, and used only by the server and worker. Requests use the official `@anthropic-ai/sdk` with structured outputs, adaptive thinking at `medium` effort (`low` for small helper calls), and the server-side refusal fallback (`fallbacks: "default"`). The default model is `claude-opus-5-5`; set `STUDIO_ANTHROPIC_MODEL` (e.g. `claude-sonnet-5-5`) to change it. Claude.ai Pro/Max subscription sign-in is not offered: third-party apps may not use consumer subscription credentials, and subscription tokens (`sk-ant-oat…`) are rejected with an explanation. Apply `202611090002_studio_anthropic_keys.sql`.
+
+## Local database migrations
+
+With `SUPABASE_DB_URL` in `.env.local`, `npm run dev` applies pending files from `supabase/migrations` before it starts the app and worker, using the same Supabase CLI version as the deploy workflow (`supabase db push --include-all`). If migrations fail, startup stops rather than run against an outdated schema; set `STUDIO_SKIP_MIGRATIONS=1` to start anyway. `npm run db:migrate` applies them on demand. The script refuses to run on Vercel or CI, so production is only ever migrated by the GitHub deploy workflow. If the database was migrated by hand in the SQL editor, record those files once with `npx supabase@2.118.0 migration repair --db-url "$SUPABASE_DB_URL" --status applied <version>…` so they are not replayed.
+
 ## ChatGPT plan connection
 
 ### Local ChatGPT connection through Codex
@@ -35,6 +62,16 @@ Apply `202610150001_ai_signin.sql` and `202610150002_retire_chatgpt_bridge.sql`,
 `npm start` still runs the main GuildOS app only. Deploy the sign-in app as the separate Vercel project described in `docs/ai-signin-service.md`; no Codex bridge service or `codex` executable is part of the local or hosted sign-in flow.
 
 Add the publishable key and vault secret to Vercel before deploying the studio. Supabase URL, publishable key, server key and database migrations must all belong to the same project. The generation route has a 120-second maximum duration; the OpenAI guild makes five model calls in three sequential rounds, with a 35-second timeout per call, so ensure your hosting plan supports the route duration. Each guild run uses more tokens than a single draft request. Do not publish these changes until you have completed the hosted smoke test above. The marketing site still uses its existing waitlist.
+
+## Free trial (no key needed)
+
+New workspaces with no model connection of their own can run a few designs on a platform key, so people see a result before they're asked for an API key.
+
+1. Apply `supabase/migrations/202611090001_studio_trial_runs.sql`.
+2. Set `STUDIO_TRIAL_GROQ_KEY` (preferred) or `STUDIO_TRIAL_OPENROUTER_KEY` on **both** the Vercel project and the agent worker. Optionally set `STUDIO_TRIAL_MODEL` and `STUDIO_TRIAL_RUNS` (default 3; `0` disables the trial).
+3. One run is one root agent task, including all five stages and retries. A run that ends blocked without publishing anything is given back. The existing per-workspace daily request limit still applies.
+
+Creating a project now queues a first Creative Director run automatically when the workspace has a connection or trial runs left. The project conversation shows how many trial runs are left and links to Connections.
 
 ## Verification
 

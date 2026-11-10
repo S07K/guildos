@@ -3,6 +3,9 @@
 export function estimateCost(version) {
  if (version.model === 'manual-edit' && version.input_tokens === 0 && version.output_tokens === 0) return 0;
  if (version.model === 'openrouter/free' || version.model === 'openrouter/openrouter/free' || /^openrouter\/.+:free$/.test(version.model)) return 0;
+ // Claude API rates (https://platform.claude.com/docs/en/about-claude/pricing), checked 2026-11-09.
+ const claude = { 'claude-opus-5-5': [4, 20], 'claude-sonnet-5-5': [2, 10], 'claude-haiku-5-5': [0.1, 0.5] }[String(version.model).replace(/^anthropic\//, '')];
+ if (claude) return (version.input_tokens * claude[0] + version.output_tokens * claude[1]) / 1_000_000;
  if (version.model === 'groq/openai/gpt-oss-120b' || version.model === 'openai/gpt-oss-120b') return (version.input_tokens * 0.15 + version.output_tokens * 0.60) / 1_000_000;
  if (!/^gpt-4\.1-mini(?:-2025-04-14)?$/.test(version.model)) return null;
  return (version.input_tokens * 0.4 + version.output_tokens * 1.6) / 1_000_000;

@@ -44,6 +44,8 @@ test('sign-in, project conversation, encrypted key settings and dashboard', asyn
  await expect(page.getByRole('heading', { name: 'Cove creative studio' })).toBeVisible();
  await page.getByRole('button', { name: 'Project conversation' }).click();
  await expect(page.getByLabel('Project guild specialists')).toBeVisible();
+ // The brief is sent to the guild as the first message when the project is created.
+ await expect(page.getByLabel('Shared project conversation').getByText('A quiet coworking studio for designers.', { exact: true })).toBeVisible();
  await page.getByRole('textbox', { name: 'Message the project guild' }).fill('Keep the hero simple and inviting.');
  await page.getByRole('button', { name: 'Send message' }).click();
  await expect(page.getByLabel('Shared project conversation').getByText('Keep the hero simple and inviting.')).toBeVisible();
@@ -98,6 +100,7 @@ test('manual canvas draws and persists a layer without a provider key', async ({
  await page.getByLabel('Project name').fill('Manual studio');
  await page.getByLabel('Your creative brief').fill('A manually designed landing page for independent designers.');
  await page.getByRole('button', { name: 'Create project', exact: true }).click();
+ await page.getByRole('button',{name:'Layers',exact:true}).click(); // The editor opens on the conversation.
  await expect(page.getByText('No layers yet. Start a blank canvas or generate a first draft.')).toBeVisible();
  await page.getByRole('button', { name: 'Rectangle tool', exact: true }).click();
  const canvas = page.getByTestId('manual-canvas');
@@ -120,6 +123,7 @@ test('manual canvas draws and persists a layer without a provider key', async ({
  await page.reload();
  await expect(page.getByTestId('manual-canvas').locator('[data-node-type="rectangle"]')).toHaveCount(1);
  // The viewport is re-centered after reload; select the persisted layer by name.
+ await page.getByRole('button',{name:'Layers',exact:true}).click();
  await page.getByLabel('Toggle visibility Hero panel').locator('xpath=..').click();
  await expect(page.getByLabel('Layer name')).toHaveValue('Hero panel');
  await page.getByLabel('Layer name').fill('My unsaved edit');
@@ -144,6 +148,7 @@ test('manual canvas draws and persists a layer without a provider key', async ({
  await expect(page.getByRole('link', {name:'Open latest'})).toBeVisible();
  await expect(page.getByLabel('Layer name')).toHaveValue('My unsaved edit');
  await page.reload();
+ await page.getByRole('button',{name:'Layers',exact:true}).click();
  await page.getByLabel('Toggle visibility Peer edit').locator('xpath=..').click();
  await expect(page.getByLabel('Layer name')).toHaveValue('Peer edit');
  await page.getByRole('link', { name: 'Back to dashboard', exact: true }).click();
@@ -270,6 +275,7 @@ test('nested auto layout expands for copy changes and narrower screens',async({p
  await expect(actions).toHaveCSS('display','flex');await expect(actions).toHaveCSS('flex-direction','row');
  await expect(paragraph).toHaveCSS('position','relative');
  const before=(await paragraph.boundingBox())!;
+ await page.getByRole('button',{name:'Layers',exact:true}).click(); // The editor opens on the conversation.
  await page.getByLabel('Toggle visibility Paragraph').locator('xpath=..').click();
  await expect(page.getByLabel('Height sizing')).toContainText('Hug contents');
  await expect(page.getByLabel('Position mode')).toContainText('Auto layout');
@@ -505,7 +511,8 @@ test('a queued message shows the local reset time and countdown until the budget
   await page.getByRole('button', { name: 'Project conversation' }).click();
   await page.getByRole('textbox', { name: 'Message the project guild' }).fill('Please align the search controls.');
   await page.getByRole('button', { name: 'Send message', exact: true }).click();
-  const warning = page.getByLabel('Shared project conversation').getByRole('status');
+  // A project created after a key is connected also auto-queues its first run; check the latest notice.
+  const warning = page.getByLabel('Shared project conversation').getByRole('status').last();
   await expect(warning).toContainText('Queued · daily limit reached');
   await expect(page.getByRole('status', { name: /is working|are working/ })).toHaveCount(0);
   await expect(warning).toContainText('Your request is saved.');
@@ -696,4 +703,34 @@ test('blocked agent work does not show a paused card in the project conversation
  await page.getByRole('button',{name:'Project conversation',exact:true}).click();
  await expect(page.getByRole('region',{name:'Agent work paused'})).toHaveCount(0);
  await expect(page.getByText('Automatic handoff limit reached. Restaurant browsing needs its parent shell.')).toHaveCount(0);
+});
+
+test('the send button becomes Stop while the guild works, and a stopped task can resume', async ({ page }) => {
+ await page.goto('/signin');
+ await page.getByLabel('Email address').fill('studio-test@example.com');
+ await page.getByRole('button', { name: 'Send sign-in code' }).click();
+ await page.getByLabel('Email code').fill('123456');
+ await page.getByRole('button', { name: 'Enter your studio' }).click();
+ await page.getByRole('link', { name: 'New project', exact: true }).click();
+ await page.getByLabel('Your creative brief').fill('A focused landing page for a plant care subscription.');
+ await page.getByRole('button', { name: 'Create project', exact: true }).click();
+ await expect(page).toHaveURL(/\/studio\/projects\/[0-9a-f-]{36}$/);
+ await page.getByRole('button', { name: 'Project conversation' }).click();
+ const stop = page.getByRole('button', { name: 'Stop the guild' });
+ const send = page.getByRole('button', { name: 'Send message' });
+ const box = page.getByRole('textbox', { name: 'Message the project guild' });
+ // The brief started a task, so the empty composer offers Stop.
+ await expect(stop).toBeVisible();
+ await expect(send).toHaveCount(0);
+ // Typing an update switches back to Send.
+ await box.fill('Use warmer colours.');
+ await expect(send).toBeEnabled();
+ await expect(stop).toHaveCount(0);
+ await box.fill('');
+ await stop.click();
+ await expect(page.getByText('You stopped the guild. Send an update, or resume where it left off.')).toBeVisible();
+ await expect(send).toBeDisabled();
+ await page.getByRole('button', { name: 'Resume' }).click();
+ await expect(stop).toBeVisible();
+ await expect(page.getByText('You stopped the guild.', { exact: false })).toHaveCount(0);
 });

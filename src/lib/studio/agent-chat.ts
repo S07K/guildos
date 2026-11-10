@@ -1,19 +1,25 @@
 import { agentIdentity, agentSystemPrompts, type AgentRole } from './agent-roles';
 import { ProviderCapacityError } from './provider-fallback.ts';
 import { chatGPTConnection, isPlanCapacityFailure } from './chatgpt-oauth';
+import { ProviderFailure, defaultAnthropicModel, requestAgentResponse } from './agents/provider-request.ts';
 
 type Usage = { input_tokens: number; output_tokens: number };
 type OpenAIResult = { status?: string; model?: string; usage?: Usage; output?: { type: string; content?: { type: string; text?: string }[] }[] };
 type Message = { author_kind: 'human' | 'agent'; body: string };
 type Note = { author_role: string; mentioned_role: string | null; anchor: string; body: string };
 
-export async function replyAsAgent(input: { key: string; role: AgentRole; brief: string; document: unknown; notes: Note[]; messages: Message[]; text: string; model?: string; provider?:'api'|'openrouter'|'groq' }, request: typeof fetch = fetch) {
+export async function replyAsAgent(input: { key: string; role: AgentRole; brief: string; document: unknown; notes: Note[]; messages: Message[]; text: string; model?: string; provider?:'api'|'openrouter'|'groq'|'anthropic' }, request: typeof fetch = fetch) {
  const { key, role, brief, document, notes, messages, text } = input;
  const provider=input.provider||'api';
- const name=provider==='openrouter'?'OpenRouter':provider==='groq'?'Groq':'OpenAI';
- const model = input.model || (provider==='openrouter'?'nvidia/nemotron-3-super-120b-a12b:free':provider==='groq'?'openai/gpt-oss-120b':process.env.STUDIO_OPENAI_MODEL || 'gpt-4.1-mini');
+ const name=provider==='anthropic'?'Claude':provider==='openrouter'?'OpenRouter':provider==='groq'?'Groq':'OpenAI';
+ const model = input.model || (provider==='anthropic'?defaultAnthropicModel:provider==='openrouter'?'nvidia/nemotron-3-super-120b-a12b:free':provider==='groq'?'openai/gpt-oss-120b':process.env.STUDIO_OPENAI_MODEL || 'gpt-4.1-mini');
  const specialist = agentIdentity[role];
- const response = await request(provider==='openrouter'?'https://openrouter.ai/api/v1/responses':provider==='groq'?'https://api.groq.com/openai/v1/responses':'https://api.openai.com/v1/responses', {
+ const url = provider==='openrouter'?'https://openrouter.ai/api/v1/responses':provider==='groq'?'https://api.groq.com/openai/v1/responses':'https://api.openai.com/v1/responses';
+ // Claude goes through the shared adapter, which returns the same Responses shape.
+ const send = (options: RequestInit) => provider==='anthropic'
+  ? requestAgentResponse('anthropic', request, options).catch(error => { if (error instanceof ProviderFailure && error.httpStatus === 429) throw new ProviderCapacityError('anthropic', 'Claude usage limit reached.'); throw error; })
+  : request(url, options);
+ const response = await send({
   method: 'POST',
   headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
   signal: AbortSignal.timeout(35000),

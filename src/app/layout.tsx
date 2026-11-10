@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import localFont from 'next/font/local';
 import { siteUrl } from '@/lib/site';
+import { Analytics } from '@vercel/analytics/next';
 import './globals.css';
 import './creative-art.css';
 import './atmosphere.css';
@@ -16,7 +17,7 @@ const editorial = localFont({
   variable: '--font-editorial', display: 'swap',
 });
 
-const description = 'Meet your creative team in one studio. GuildOS brings creative direction, UX, design, copy, and quality review together around your brief, with you in control.';
+const description = 'Describe your product and get a reviewed landing page. Five AI specialists (creative direction, UX, UI, copy and QA) build it in order; you edit on the canvas and export to React, React Native, SwiftUI or PNG. Free to try.';
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -46,5 +47,5 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en" className={`${sans.variable} ${editorial.variable}`}><body>{children}</body></html>;
+  return <html lang="en" className={`${sans.variable} ${editorial.variable}`}><body>{children}<Analytics /></body></html>;
 }

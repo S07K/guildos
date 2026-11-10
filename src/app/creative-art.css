@@ -80,3 +80,24 @@
 @media (prefers-reduced-motion: reduce) {
   .forming-pixel, .pixel-accent { animation: none !important; transform: none; opacity: 1; }
 }
+
+/* Hero brief: start a project straight from the landing page. */
+.hero-brief { display: flex; flex-direction: column; width: 100%; max-width: 580px; margin-top: 8px; padding: 14px 14px 12px 18px; border: 1px solid rgba(32, 43, 56, .1); border-radius: 16px; background: rgba(255, 255, 255, .94); box-shadow: 0 1px 2px rgba(32, 43, 56, .04), 0 12px 32px rgba(32, 43, 56, .07); backdrop-filter: blur(6px); transition: border-color .2s, box-shadow .2s; text-align: left; }
+.hero-brief:focus-within { border-color: rgba(56, 102, 80, .45); box-shadow: 0 0 0 4px rgba(56, 102, 80, .1), 0 12px 32px rgba(32, 43, 56, .07); }
+.hero-brief textarea { width: 100%; min-height: 52px; resize: none; border: 0; outline: none; background: transparent; padding: 2px 0; font: inherit; font-size: 16px; line-height: 1.55; color: var(--text); field-sizing: content; max-height: 200px; }
+.hero-brief textarea:focus-visible { outline: none; }
+.hero-brief textarea::placeholder { color: #98a2b0; }
+.hero-brief-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; }
+.hero-brief-hint { font-size: 12px; color: var(--muted); }
+.hero-brief-submit { display: inline-flex; flex-shrink: 0; white-space: nowrap; align-items: center; gap: 8px; padding: 10px 16px; border: 0; border-radius: 10px; background: var(--accent); color: #fff; font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; transition: background .2s; }
+.hero-brief-hint[data-state="short"] { color: #9a6b1f; }
+.hero-brief-hint[data-state="ready"] { color: var(--accent); }
+.hero-brief-submit:hover:not(:disabled) { background: var(--accent-hover); }
+.hero-brief-submit:disabled { background: #c9d1cc; color: #f6f8f7; cursor: not-allowed; }
+.hero-brief-submit span { transition: transform .2s; }
+.hero-brief-submit:hover:not(:disabled) span { transform: translateX(2px); }
+.connector-letter { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; background: #f54f35; color: #fff; font-size: 13px; font-weight: 700; line-height: 1; }
+@media (max-width: 480px) {
+  .hero-brief-hint { font-size: 11px; }
+  .hero-brief-submit { padding: 10px 14px; }
+}

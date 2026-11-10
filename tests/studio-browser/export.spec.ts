@@ -33,6 +33,7 @@ test('export inspector, scoped code downloads, live preview and zoom-independent
   await request.post('http://127.0.0.1:3199/testing/version',{data:{id:randomUUID(),project_id:projectId,document,created_at:new Date().toISOString(),feedback:'Export fixture',model:'test',input_tokens:0,output_tokens:0}});
   await page.reload();
   // Select from the layers panel even when an artboard is offscreen.
+  await page.getByRole('button',{name:'Layers',exact:true}).click(); // The editor opens on the conversation.
   await page.getByText('Blue tile',{exact:true}).first().click();
   const panel=page.getByRole('region',{name:'Export Layer'});
   await expect(panel).toBeVisible();

@@ -7,6 +7,7 @@ import { AgentMark } from '@/components/studio/agent-identity';
 import { AiProviderMark } from '@/components/ai-provider-mark';
 import { ProductPreview } from '@/components/product-preview';
 import { CreativeWorkflow } from '@/components/creative-workflow';
+import { HeroBriefForm } from '@/components/hero-brief-form';
 import type { AgentRole } from '@/lib/studio/agent-roles';
 import { Check, Sparkles } from 'lucide-react';
 import { siteUrl } from '@/lib/site';
@@ -37,7 +38,7 @@ export default async function Home() {
   const initial = typeof profileName === 'string' ? profileName.trim().charAt(0).toUpperCase() || 'G' : 'G';
   return <div className="site-shell">
     <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify({
-      '@context': 'https://schema.org', '@type': 'SoftwareApplication', name: 'GuildOS', url: siteUrl, applicationCategory: 'DesignApplication', operatingSystem: 'Web', description: 'A shared creative studio where specialized AI agents collaborate around your brief while you direct and review the work.', offers: { '@type': 'Offer', category: 'Early access', price: '0', priceCurrency: 'USD' }, publisher: { '@type': 'Organization', name: 'GuildOS', url: siteUrl },
+      '@context': 'https://schema.org', '@type': 'SoftwareApplication', name: 'GuildOS', url: siteUrl, applicationCategory: 'DesignApplication', operatingSystem: 'Web', description: 'Describe your product and get a reviewed landing page from five AI specialists. Edit on the canvas and export to React, React Native, SwiftUI or PNG.', offers: { '@type': 'Offer', category: 'Early access', price: '0', priceCurrency: 'USD' }, publisher: { '@type': 'Organization', name: 'GuildOS', url: siteUrl },
     }) }} />
     <a className="skip-link" href="#main">Skip to content</a>
     <header className="site-header">
@@ -50,13 +51,11 @@ export default async function Home() {
         <LandscapeImage scene="horizon" className="hero-landscape hero-landscape-monochrome" priority />
         <LandscapeImage scene="horizon" className="hero-landscape hero-landscape-color" />
         <div className="hero-fluid" aria-hidden="true"><div className="hero-fluid-wash hero-fluid-wash-one"/><div className="hero-fluid-wash hero-fluid-wash-two"/><div className="hero-fluid-ripple hero-fluid-ripple-one"/><div className="hero-fluid-ripple hero-fluid-ripple-two"/></div>
-        <p className="eyebrow hero-eyebrow" data-motion="hero"><span aria-hidden="true" /> YOUR CREATIVE STUDIO, WITH A GUILD BUILT IN</p>
-        <h1 id="hero-title" data-motion="hero" data-delay="100">Big ideas deserve<br /><span>a team behind them.</span></h1>
-        <p className="hero-description" data-motion="hero" data-delay="220">One shared workspace for your brief, a guild of creative specialists, and the work you shape together.</p>
-        <a href={studioHref} className="closing-button hero-signin">Enter the studio</a>
-
-        <p className="hero-note">A creative studio for founders and small teams. You set the direction; your guild helps move the work forward.</p>
-        <a className="hero-explore" href="#product-preview">Explore the studio</a>
+        <p className="eyebrow hero-eyebrow" data-motion="hero"><span aria-hidden="true" /> FIVE AI SPECIALISTS · ONE REVIEWED DESIGN</p>
+        <h1 id="hero-title" data-motion="hero" data-delay="100">Describe your product.<br /><span>Get a reviewed landing page.</span></h1>
+        <p className="hero-description" data-motion="hero" data-delay="220">Write a brief. A creative director, UX architect, UI designer, copywriter and QA critic build your screen in order, and QA checks it before you see it. Edit it on the canvas and export to React, React Native, SwiftUI or PNG.</p>
+        <HeroBriefForm />
+        <a className="hero-explore" href="#product-preview">See what the guild makes</a>
       </section>
 
       <ProductPreview />
@@ -73,12 +72,13 @@ export default async function Home() {
       </section>
 
       <section className="connector-section" aria-labelledby="connectors-heading">
-        <div className="connector-intro"><p className="eyebrow">THE MODELS YOU ALREADY USE</p><h2 id="connectors-heading">Bring your preferred AI connection.</h2><p>Connect a supported provider to your workspace. GuildOS routes creative tasks through your connected models, while your team guides the work.</p></div>
+        <div className="connector-intro"><p className="eyebrow">THE MODELS YOU ALREADY USE</p><h2 id="connectors-heading">Start free. Then bring your own model.</h2><p>Your first runs use the GuildOS trial model, so you can try it with no setup. After that, connect your own provider. Keys are encrypted at rest and only decrypted on the server when a run uses them, and you pay the provider directly.</p></div>
         <div className="connector-providers"><p className="connector-title">AVAILABLE CONNECTORS</p><ul className="connector-list" data-stagger>
-          <li data-stagger-item><AiProviderMark id="openai" size={22}/><span>OpenAI</span><span className="connector-state">Connect in studio</span></li>
-          <li data-stagger-item><AiProviderMark id="claude" size={22}/><span>Claude</span><span className="connector-state">Connect in studio</span></li>
-          <li data-stagger-item><AiProviderMark id="grok" size={22}/><span>Grok</span><span className="connector-state">Connect in studio</span></li>
-        </ul><a className="connector-link" href="#product-preview">See the workspace</a></div>
+          <li data-stagger-item><AiProviderMark id="chatgpt" size={22}/><span>ChatGPT plan</span><span className="connector-state">Sign in</span></li>
+          <li data-stagger-item><AiProviderMark id="openai" size={22}/><span>OpenAI API</span><span className="connector-state">API key</span></li>
+          <li data-stagger-item><AiProviderMark id="openrouter" size={22}/><span>OpenRouter</span><span className="connector-state">Free tier</span></li>
+          <li data-stagger-item><span className="connector-letter" aria-hidden="true">g</span><span>Groq</span><span className="connector-state">Free tier</span></li>
+</ul><a className="connector-link" href="#product-preview">See the workspace</a></div>
       </section>
 
       <section className="studio-details" aria-labelledby="details-title">

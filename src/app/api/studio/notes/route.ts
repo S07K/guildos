@@ -1,5 +1,6 @@
 import { studioUser } from '@/lib/studio/supabase';
 import { taskDisplay } from '@/lib/studio/task-display';
+import { scheduleWorker } from '@/lib/studio/worker-trigger';
 import { adminClient, authConfig, sessionClient } from '@/lib/studio/supabase';
 import { agentIdentity, agentRoles } from '@/lib/studio/agent-roles';
 import { encodeLayerReference } from '@/lib/studio/revision-scope';
@@ -90,5 +91,6 @@ export async function POST(request: Request) {
  if (data.status === 'not_found') return json({ error: 'Project or version not found.' }, 404);
  if (data.status === 'full') return json({ error: 'Your workspace has 20 pending tasks. Wait for work to finish or cancel a task.' }, 429);
  if (data.status === 'conflict') return json({ error: 'This message request was already used. Please send a new message.' }, 409);
+ scheduleWorker();
  return json({ note: data.note, task: data.task ? {...data.task,...taskDisplay(data.task)} : data.task }, data.status === 'replayed' ? 200 : 201);
 }

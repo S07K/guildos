@@ -1,4 +1,6 @@
-export type AgentProvider = 'openai'|'openrouter'|'groq';
+import Anthropic from '@anthropic-ai/sdk';
+
+export type AgentProvider = 'openai'|'openrouter'|'groq'|'anthropic';
 export class ProviderFailure extends Error {
  readonly retryable:boolean;
  readonly fallbackable:boolean;
@@ -9,7 +11,7 @@ export class ProviderFailure extends Error {
   this.httpStatus=details.httpStatus;this.providerCode=details.providerCode;
  }
 }
-const name=(provider:AgentProvider)=>provider==='openrouter'?'OpenRouter':provider==='groq'?'Groq':'OpenAI';
+const name=(provider:AgentProvider)=>provider==='openrouter'?'OpenRouter':provider==='groq'?'Groq':provider==='anthropic'?'Claude':'OpenAI';
 const endpoint=(provider:AgentProvider)=>provider==='openrouter'?'https://openrouter.ai/api/v1/responses':provider==='groq'?'https://api.groq.com/openai/v1/responses':'https://api.openai.com/v1/responses';
 const knownCodes=new Set(['invalid_request_error','invalid_json_schema','schema_validation_error','unsupported_parameter','unsupported_value','json_validate_failed','tool_use_failed','model_output_invalid','model_not_found','model_decommissioned','context_length_exceeded','prompt_too_long','rate_limit_exceeded','insufficient_quota','billing_error','usage_limit_exceeded','content_filter','content_policy_violation','safety_violation','authentication_error','permission_error','server_error']);
 type FailureDetails={code:string;message:string;publicCode?:string};
@@ -51,8 +53,53 @@ function structuralSchema(value:unknown):unknown {
  if(!value||typeof value!=='object')return value;
  return Object.fromEntries(Object.entries(value).filter(([key])=>!constraintKeys.has(key)).map(([key,value])=>[key,structuralSchema(value)]));
 }
+export const defaultAnthropicModel='claude-opus-5-5';
+type ResponsesBody={model:string;max_output_tokens?:number;instructions?:string;input:string;text?:{format?:{type?:string;schema?:unknown}}};
+/**
+ * Claude adapter: callers build OpenAI Responses-shaped requests, so translate one
+ * into a Messages API call and return a Responses-shaped result. Structured output
+ * uses output_config.format; bounds are stripped because GuildOS validates them anyway.
+ */
+async function anthropicResponse(request:typeof fetch,options:RequestInit):Promise<Response> {
+ const key=String(new Headers(options.headers).get('authorization')||'').replace(/^Bearer\s+/i,'');
+ const body=JSON.parse(String(options.body)) as ResponsesBody;
+ const client=new Anthropic({apiKey:key,fetch:request,maxRetries:1});
+ const schema=body.text?.format?.type==='json_schema'?structuralSchema(body.text.format.schema) as Record<string,unknown>:undefined;
+ const small=(body.max_output_tokens||0)<=600;
+ try{
+  // Thinking is always on for this model; headroom keeps it from consuming the answer budget.
+  const message=await client.beta.messages.stream({
+   model:body.model||defaultAnthropicModel,max_tokens:Math.max(16000,(body.max_output_tokens||0)+12000),
+   betas:['server-side-fallback-2026-07-01'],fallbacks:'default',
+   ...(body.instructions?{system:body.instructions}:{}),
+   messages:[{role:'user',content:body.input}],
+   output_config:{effort:small?'low':'medium',...(schema?{format:{type:'json_schema',schema}}:{})},
+  },{signal:options.signal||undefined}).finalMessage();
+  if(message.stop_reason==='refusal')throw new ProviderFailure('Claude declined this request under its usage policy. Revise the request before retrying.',false,true);
+  const text=message.content.flatMap(block=>block.type==='text'?[block.text]:[]).join('');
+  const truncated=message.stop_reason==='max_tokens';
+  return new Response(JSON.stringify({
+   status:truncated?'incomplete':'completed',...(truncated?{incomplete_details:{reason:'max_output_tokens'}}:{}),
+   model:`anthropic/${message.model}`,usage:{input_tokens:message.usage.input_tokens,output_tokens:message.usage.output_tokens},
+   output:[{type:'message',content:[{type:'output_text',text}]}],
+  }),{status:200,headers:{'Content-Type':'application/json'}});
+ }catch(error){
+  if(error instanceof ProviderFailure)throw error;
+  if(options.signal?.aborted)throw error;
+  if(error instanceof Anthropic.APIConnectionTimeoutError)throw new ProviderFailure('Claude request timed out. Try another connected provider or retry.',true,true);
+  if(error instanceof Anthropic.APIConnectionError)throw new ProviderFailure('Claude could not be reached. Try another connected provider or retry.',true,true);
+  if(error instanceof Anthropic.APIError&&typeof error.status==='number'){
+   // Map onto the shared failure messages; never echo the provider's message text.
+   const type=(error.error as {error?:{type?:string}}|undefined)?.error?.type||'';
+   const response=new Response(JSON.stringify({error:{type}}),{status:error.status});
+   throw providerFailure(response,'anthropic',await failureDetails(response));
+  }
+  throw error;
+ }
+}
 /** A bounded transport retry only for explicitly unsupported schema constraints. */
 export async function requestAgentResponse(provider:AgentProvider,request:typeof fetch,options:RequestInit,onProgress?:(message:string)=>Promise<void>) {
+ if(provider==='anthropic')return anthropicResponse(request,options);
  let current=options;
  for(let attempt=0;attempt<2;attempt++){
   let response:Response;
