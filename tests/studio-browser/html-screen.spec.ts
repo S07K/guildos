@@ -327,7 +327,7 @@ test('manual edit opens a full-screen editor: layers, style panel, inline text, 
  await expect(page.frameLocator('iframe[title="Threadline home"]').getByRole('heading', { name: 'Threadline Studio' })).toBeVisible();
 });
 
-test('a share link shows the screen to anyone signed out, until it is revoked', async ({ page, request, browser }) => {
+test('a share link shows the screen to anyone signed out, until it is revoked', async ({ page, request, browser }, testInfo) => {
  await page.setViewportSize({ width: 1440, height: 1000 });
  await page.route('https://images.unsplash.com/**', route => route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="3"/>' }));
  await page.goto('/signin');
@@ -370,6 +370,11 @@ test('a share link shows the screen to anyone signed out, until it is revoked', 
  await expect(viewer.getByRole('link', { name: 'GuildOS home' })).toBeVisible();
  // The title keeps normal spacing (the landing page's large-headline h1 style must not leak in).
  await expect(viewer.getByRole('heading', { name: 'Threadline home' })).toHaveCSS('letter-spacing', '-0.2px');
+ // The title sits right after the logo, in the same row, even on a phone.
+ const logoBox = (await viewer.getByRole('link', { name: 'GuildOS home' }).boundingBox())!, titleBox = (await viewer.getByRole('heading', { name: 'Threadline home' }).boundingBox())!;
+ expect(titleBox.x).toBeGreaterThan(logoBox.x + logoBox.width);
+ expect(Math.abs((titleBox.y + titleBox.height / 2) - (logoBox.y + logoBox.height / 2))).toBeLessThan(20);
+ await viewer.screenshot({ path: testInfo.outputPath('share-header-phone.png'), clip: { x: 0, y: 0, width: 390, height: 140 } });
  const shared = viewer.frameLocator('iframe[title="Threadline home"]');
  await expect(shared.getByRole('heading', { name: 'Layers made for slow mornings' })).toBeVisible();
  // The frame grows to the full design, and the page scrolls to its last section on a phone.

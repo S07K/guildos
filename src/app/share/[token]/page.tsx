@@ -21,19 +21,16 @@ export default async function SharedPage({ params }: { params: Promise<{ token: 
   html: shareImageUrls(composeHtmlScreen(screen.document, await compileScreenCss(screen.document), { exportOnly: true }), board.project.id, token),
  })));
  return <main style={{ minHeight: '100vh', background: '#f4f6f5', color: '#1f2a33', padding: '32px 16px 64px' }}>
-  <nav aria-label="GuildOS" style={{ maxWidth: 1440, margin: '0 auto 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
-   <a href="/" aria-label="GuildOS home" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, font: '650 18px/1 system-ui, sans-serif', letterSpacing: '-.5px', color: '#243b32', textDecoration: 'none' }}><GuildOSLogo/>guildos</a>
-   <span style={{ font: '500 12px/1 system-ui, sans-serif', color: '#2f5f48', background: '#e4eee8', borderRadius: 999, padding: '6px 10px' }}>View only</span>
-  </nav>
-  <header style={{ maxWidth: 1440, margin: '0 auto 28px' }}>
-   <div>
-    <h1 style={{ font: '650 22px/1.25 system-ui, sans-serif', letterSpacing: '-.2px', margin: 0 }}>{board.scope === 'screen' ? screens[0].name : board.project.name}</h1>
-    <p style={{ font: '400 14px/1.4 system-ui, sans-serif', color: '#5b6770', margin: '4px 0 0' }}>{board.scope === 'screen' ? board.project.name : `${screens.length} screen${screens.length === 1 ? '' : 's'}`} · designed with GuildOS</p>
+  <header style={{ maxWidth: 1440, margin: '0 auto 32px', display: 'flex', alignItems: 'center', gap: 12 }}>
+   <a href="/" aria-label="GuildOS home" style={{ display: 'inline-flex', flex: 'none' }}><GuildOSLogo/></a>
+   <div style={{ minWidth: 0, flex: '1 1 160px' }}>
+    <h1 style={{ font: '650 18px/1.25 system-ui, sans-serif', letterSpacing: '-.2px', margin: 0, overflowWrap: 'anywhere' }}>{board.scope === 'screen' ? screens[0].name : board.project.name}</h1>
+    <p style={{ font: '400 13px/1.4 system-ui, sans-serif', color: '#5b6770', margin: '2px 0 0' }}>{board.scope === 'screen' ? board.project.name : `${screens.length} screen${screens.length === 1 ? '' : 's'}`} · view only</p>
    </div>
   </header>
   <div style={{ maxWidth: 1440, margin: '0 auto', display: 'flex', flexWrap: 'wrap', gap: 40, alignItems: 'flex-start', justifyContent: 'center' }}>
    {screens.map(screen => <div key={screen.id} style={{ flex: `0 1 ${screen.frame.width}px`, minWidth: 0 }}>
-    <SharedScreen name={screen.name} html={screen.html} width={screen.frame.width} minHeight={screen.frame.height}/>
+    <SharedScreen name={screen.name} html={screen.html} width={screen.frame.width} minHeight={screen.frame.height} caption={board.scope === 'board'}/>
    </div>)}
   </div>
  </main>;

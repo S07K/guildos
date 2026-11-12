@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react';
  * scaled down to fit narrow viewports and sized to its full content height. It is
  * view-only, so the frame takes no pointer input and its links cannot navigate.
  */
-export function SharedScreen({ name, html, width, minHeight }: { name: string; html: string; width: number; minHeight: number }) {
+export function SharedScreen({ name, html, width, minHeight, caption = true }: { name: string; html: string; width: number; minHeight: number; caption?: boolean }) {
  const box = useRef<HTMLDivElement>(null), frame = useRef<HTMLIFrameElement>(null), content = useRef<ResizeObserver | null>(null);
  const [available, setAvailable] = useState(width), [height, setHeight] = useState(minHeight);
  useEffect(() => {
@@ -28,7 +28,7 @@ export function SharedScreen({ name, html, width, minHeight }: { name: string; h
  };
  const scale = Math.min(1, available / width);
  return <figure className="shared-screen" style={{ margin: 0 }}>
-  <figcaption style={{ font: '500 14px/1.3 system-ui, sans-serif', color: '#55606a', margin: '0 0 10px' }}>{name}</figcaption>
+  {caption && <figcaption style={{ font: '500 14px/1.3 system-ui, sans-serif', color: '#55606a', margin: '0 0 10px' }}>{name}</figcaption>}
   <div ref={box} style={{ width: '100%', maxWidth: width }}>
    <div style={{ width: width * scale, height: height * scale, overflow: 'hidden', borderRadius: 12, boxShadow: '0 1px 2px rgba(15,23,42,.06), 0 12px 32px rgba(15,23,42,.10)', background: '#fff' }}>
     <iframe ref={frame} title={name} srcDoc={html} onLoad={measure} sandbox="allow-same-origin" referrerPolicy="no-referrer" loading="lazy" tabIndex={-1}
