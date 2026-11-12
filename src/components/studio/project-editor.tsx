@@ -53,11 +53,16 @@ import { GuildOSMark } from './brand';
 import type { AgentRole } from '@/lib/studio/agent-roles';
 import { agentIdentity } from '@/lib/studio/agent-roles';
 import { canvasQualityIssues } from '@/lib/studio/canvas-quality';
-import { HTML_DEVICE_FRAME, isHtmlScreen, type HtmlScreenDocument } from '@/lib/studio/html-screen';
+import { isHtmlScreen, type HtmlScreenDocument } from '@/lib/studio/html-screen';
 import type { ScreenSelection } from './html-screen-frame';
 import { BoardView, type BoardDraft } from './board-view';
+import { BoardDock, ZoomControl, type BoardTool } from './board-dock';
+import { SquarePlus as SquarePlusIcon } from 'lucide-react';
+import { NewScreenComposer } from './new-screen-composer';
+import type { BoardNote } from '@/lib/studio/board-notes';
 import { ScreenVersions } from './screen-versions';
 import { ShareDialog } from './share-dialog';
+import { ScreenInspector } from './screen-inspector';
 import type { BoardScreen } from '@/lib/studio/screens';
 import { ManualEditor } from './manual-editor';
 import { captureBrowserZoom } from './pinch-zoom';
@@ -115,11 +120,12 @@ function newlyAddedScreenRoot(before:unknown,after:unknown):CanvasNode|undefined
     const previous=new Set(isCanvas(before)?before.nodes.filter(node=>!node.parentId&&(node.screen||node.type==='frame')).map(node=>node.id):[]);
     return after.nodes.find(node=>!node.parentId&&(node.screen||node.type==='frame')&&!previous.has(node.id));
 }
-export function ProjectEditor({ project, initialVersions, initialScreens = [], initialVersionId, connections = { api:false, chatgpt:false, openrouter:false, groq:false }, trial = null }: {
+export function ProjectEditor({ project, initialVersions, initialScreens = [], initialNotes = [], initialVersionId, connections = { api:false, chatgpt:false, openrouter:false, groq:false }, trial = null }: {
     project: Project;
     trial?: TrialStatus | null;
     initialVersions: Version[];
     initialScreens?: BoardScreen[];
+    initialNotes?: BoardNote[];
     initialVersionId?: string;
     connections?: {api:boolean;chatgpt:boolean;openrouter:boolean;groq:boolean};
 }) {
@@ -229,13 +235,15 @@ export function ProjectEditor({ project, initialVersions, initialScreens = [], i
     // The live agent draft must render even before the project's first saved version exists.
     const canvasPreview=visiblePipelinePreview?.kind==='canvas'?visiblePipelinePreview:null;
     const canvasDocument=canvasPreview?.document||(!visiblePipelinePreview&&isCanvas(draft)?draft:null);
-    // Board: once a project has a screen (or the agents are drawing its first), it is a board of screens,
-    // each with its own versions. Until then an empty project keeps the freeform canvas tools.
+    // A project is a board of screens, each with its own versions. Only projects that already hold
+    // freeform canvas or landing-page work keep the older canvas editor and its drawing tools.
     const [screens,setScreens]=useState<BoardScreen[]>(initialScreens);
     const boardDraft:BoardDraft|null=visiblePipelinePreview?.kind==='html-screen'?{screenId:visiblePipelinePreview.screenId,position:visiblePipelinePreview.position,document:visiblePipelinePreview.document,role:visiblePipelinePreview.role}:null;
-    const [boardStarted,setBoardStarted]=useState(false);
-    if(boardDraft&&!boardStarted)setBoardStarted(true);
-    const boardMode=screens.length>0||boardStarted;
+    const legacyCanvas=versions.some(item=>isDesign(item.document)||(isCanvas(item.document)&&item.document.nodes.length>0));
+    const boardMode=screens.length>0||!legacyCanvas;
+    const boardModeRef=useRef(boardMode);boardModeRef.current=boardMode;
+    const [boardTool,setBoardTool]=useState<BoardTool>('select');
+    const [spacePan,setSpacePan]=useState(false);
     const [screenSelection,setScreenSelection]=useState<ScreenSelection|null>(null);
     const [manualEditing,setManualEditing]=useState(false);
     // A screen is selected by clicking it; the floating toolbar, properties and chat context follow it.
@@ -381,7 +389,7 @@ export function ProjectEditor({ project, initialVersions, initialScreens = [], i
         return null;
     }
     const updateText = (key: keyof Omit<Design,'sectionOrder'>, label: string, multiline = false) => isDesign(draft) ? <TextField key={key} label={label} value={String(draft[key])} onChange={event => update(key, event.target.value)} multiline={multiline} minRows={multiline ? 3 : undefined} disabled={saving} slotProps={{ htmlInput: { maxLength: 2000 } }}/> : null;
-    const screenToolbarAt = useFloatingAnchor(canvasSectionRef, `[data-screen-id="${selectedScreenId}"] [data-screen-frame]`, boardMode && !!selectedScreen?.document && !manualEditing);
+    const screenToolbarAt = useFloatingAnchor(canvasSectionRef, `[data-screen-id="${selectedScreenId}"] [data-screen-title]`, boardMode && !!selectedScreen?.document && !manualEditing);
     useEffect(()=>{
         if(!selectedScreenId)return;
         const onKey=(event:KeyboardEvent)=>{const target=event.target as HTMLElement|null;if(event.key!=='Escape'||manualEditing||(target&&(['INPUT','TEXTAREA','SELECT'].includes(target.tagName)||target.isContentEditable||target.closest('[role="dialog"],[role="menu"]'))))return;setSelectedScreenId(null);setScreenSelection(null);};
@@ -389,6 +397,55 @@ export function ProjectEditor({ project, initialVersions, initialScreens = [], i
     },[selectedScreenId,manualEditing]);
     const [confirmRemoveScreen,setConfirmRemoveScreen]=useState<BoardScreen|null>(null);
     const [sharing,setSharing]=useState<BoardScreen|null>(null);
+    // New screen composer (from the dock, S, or I to start by attaching a reference image).
+    const [newScreenOpen,setNewScreenOpen]=useState(false);
+    const [pickReference,setPickReference]=useState(false);
+    const openNewScreen=(pick:boolean)=>{setPickReference(pick);setNewScreenOpen(true);};
+    // Sticky notes on the board.
+    const [notes,setNotes]=useState<BoardNote[]>(initialNotes);
+    const [selectedNoteId,setSelectedNoteId]=useState<string|null>(null);
+    const [editingNoteId,setEditingNoteId]=useState<string|null>(null);
+    const noteRequest=async(method:'POST'|'PATCH',body:object)=>{
+        const response=await fetch('/api/studio/board-notes',{method,headers:{'Content-Type':'application/json'},body:JSON.stringify({projectId:project.id,...body})});
+        const data=await response.json().catch(()=>({}));
+        if(!response.ok)throw new Error(data.error||'The note could not be saved.');
+        return data.note as BoardNote;
+    };
+    /** Adds a note in the middle of the view and starts editing it. */
+    async function addNote(){
+        const element=canvasRef.current,art=element?.querySelector<HTMLElement>('.design-artboard');
+        if(!element||!art)return;
+        const scale=zoomRef.current/100,box=element.getBoundingClientRect(),origin=art.getBoundingClientRect();
+        const x=Math.round((box.left+element.clientWidth/2-origin.left)/scale-CANVAS_WORKSPACE_MARGIN-120),y=Math.round((box.top+element.clientHeight/2-origin.top)/scale-CANVAS_WORKSPACE_MARGIN-70);
+        // The note appears and takes typing at once; it is saved in the background and keeps what was typed meanwhile.
+        const temp=`new-${crypto.randomUUID()}`,now=new Date().toISOString();
+        setNotes(items=>[...items,{id:temp,body:'',color:'yellow',x,y,width:240,created_at:now,updated_at:now}]);
+        deselectScreen();setSelectedNoteId(temp);setEditingNoteId(temp);
+        try{
+            const saved=await noteRequest('POST',{x,y,color:'yellow',body:''});
+            let local:BoardNote|undefined;
+            setNotes(items=>items.map(note=>{if(note.id!==temp)return note;local=note;return{...saved,key:temp,body:note.body,color:note.color,x:note.x,y:note.y};}));
+            setSelectedNoteId(id=>id===temp?saved.id:id);setEditingNoteId(id=>id===temp?saved.id:id);
+            pendingNotes.current.set(temp,saved.id);
+            if(local&&(local.body||local.color!==saved.color||local.x!==saved.x||local.y!==saved.y))await noteRequest('PATCH',{noteId:saved.id,body:local.body,color:local.color,x:local.x,y:local.y});
+        }catch(cause){setNotes(items=>items.filter(note=>note.id!==temp));setError(cause instanceof Error?cause.message:'The note could not be added.');}
+    }
+    // Edits to a note that is still being created are saved once it has its real id.
+    const pendingNotes=useRef(new Map<string,string>());
+    const changeNote=(rawId:string,patch:Partial<Pick<BoardNote,'body'|'color'|'x'|'y'>>,save:boolean)=>{
+        const noteId=pendingNotes.current.get(rawId)??rawId;
+        if(noteId.startsWith('new-')){setNotes(items=>items.map(note=>note.id===noteId?{...note,...patch}:note));return;}
+        const previous=notes.find(note=>note.id===noteId);
+        setNotes(items=>items.map(note=>note.id===noteId?{...note,...patch}:note));
+        if(save&&previous&&Object.entries(patch).some(([key,value])=>previous[key as keyof BoardNote]!==value))void noteRequest('PATCH',{noteId,...patch}).catch(cause=>{setNotes(items=>items.map(note=>note.id===noteId?previous:note));setError(cause instanceof Error?cause.message:'The note could not be saved.');});
+    };
+    const removeNote=(rawId:string)=>{
+        const noteId=pendingNotes.current.get(rawId)??rawId;
+        if(noteId.startsWith('new-'))return;
+        const previous=notes;
+        setNotes(items=>items.filter(note=>note.id!==noteId));setSelectedNoteId(null);setEditingNoteId(null);
+        void noteRequest('PATCH',{noteId,remove:true}).catch(cause=>{setNotes(previous);setError(cause instanceof Error?cause.message:'The note could not be deleted.');});
+    };
     const replaceScreen=(next:Partial<BoardScreen>&{id:string})=>setScreens(items=>items.map(item=>item.id===next.id?{...item,...next}:item));
     /** Commits a new version of a screen (manual edits, restores) and updates the board. */
     async function saveScreen(screen:BoardScreen,document:HtmlScreenDocument,feedback:string):Promise<boolean>{
@@ -464,25 +521,71 @@ export function ProjectEditor({ project, initialVersions, initialScreens = [], i
         replaceScreen({id:screenId,name});
         void patchScreen(screenId,{name}).catch(cause=>{if(previous)replaceScreen({id:screenId,name:previous});setError(cause instanceof Error?cause.message:'The screen could not be renamed.');});
     };
-    // New screens and agent edits arrive while you work: the board refreshes quietly.
+    const editingNoteRef=useRef<string|null>(null);editingNoteRef.current=editingNoteId;
+    // New screens, notes and agent edits arrive while you work: the board refreshes quietly.
     useEffect(()=>{
         if(!boardMode)return;
         const controller=new AbortController();let timer:ReturnType<typeof setTimeout>;
         async function poll(){
-            try{if(!document.hidden&&!manualEditing){const response=await fetch(`/api/studio/screens?projectId=${project.id}`,{cache:'no-store',signal:controller.signal});if(response.ok){const data=await response.json();setScreens(current=>JSON.stringify(current.map(item=>[item.id,item.headVersionId,item.x,item.y,item.name]))===JSON.stringify((data.screens as BoardScreen[]).map(item=>[item.id,item.headVersionId,item.x,item.y,item.name]))?current:data.screens);}}}
+            try{if(!document.hidden&&!manualEditing){
+                const [response,noteResponse]=await Promise.all([fetch(`/api/studio/screens?projectId=${project.id}`,{cache:'no-store',signal:controller.signal}),fetch(`/api/studio/board-notes?projectId=${project.id}`,{cache:'no-store',signal:controller.signal})]);
+                if(response.ok){const data=await response.json();setScreens(current=>JSON.stringify(current.map(item=>[item.id,item.headVersionId,item.x,item.y,item.name]))===JSON.stringify((data.screens as BoardScreen[]).map(item=>[item.id,item.headVersionId,item.x,item.y,item.name]))?current:data.screens);}
+                if(noteResponse.ok){const data=await noteResponse.json();const editing=editingNoteRef.current;setNotes(current=>{const next=(data.notes as BoardNote[]).map(note=>{const mine=current.find(item=>item.id===note.id);const merged=note.id===editing&&mine?mine:note;return mine?.key?{...merged,key:mine.key}:merged;});const unsaved=current.filter(item=>item.id.startsWith('new-'));return JSON.stringify([...next,...unsaved])===JSON.stringify(current)?current:[...next,...unsaved];});}
+            }}
             catch{/* Keep the current board during a transient failure. */}
             finally{if(!controller.signal.aborted)timer=setTimeout(poll,3000);}
         }
         timer=setTimeout(poll,3000);return()=>{controller.abort();clearTimeout(timer);};
     },[boardMode,manualEditing,project.id]);
     // Open on the board's first screen.
-    const boardCentered=useRef(false);
+    /** Zooms and scrolls so the given board items (all screens and notes by default) fill the view. */
+    const fitBoard=(only?:string|null)=>{
+        const element=canvasRef.current,art=element?.querySelector<HTMLElement>('.design-artboard');
+        if(!element||!art)return;
+        const items=[...art.querySelectorAll<HTMLElement>(only?`[data-screen-id="${CSS.escape(only)}"]`:'[data-screen-id],[data-board-note]')];
+        if(!items.length)return;
+        const scale=zoomRef.current/100,origin=art.getBoundingClientRect();
+        const rects=items.map(item=>{const r=item.getBoundingClientRect();return{x:(r.left-origin.left)/scale,y:(r.top-origin.top)/scale-28,w:r.width/scale,h:r.height/scale+28};});
+        const x=Math.min(...rects.map(r=>r.x)),y=Math.min(...rects.map(r=>r.y)),w=Math.max(...rects.map(r=>r.x+r.w))-x,h=Math.max(...rects.map(r=>r.y+r.h))-y;
+        const next=Math.max(10,Math.min(100,Math.min((element.clientWidth-160)/w,(element.clientHeight-180)/h)*100));
+        zoomRef.current=next;setZoom(next);
+        requestAnimationFrame(()=>requestAnimationFrame(()=>{
+            const box=element.getBoundingClientRect(),artBox=art.getBoundingClientRect(),s=next/100;
+            element.scrollLeft+=artBox.left-box.left+(x+w/2)*s-element.clientWidth/2;
+            element.scrollTop+=artBox.top-box.top+(y+h/2)*s-(element.clientHeight-40)/2;
+        }));
+    };
+    /** Zooms around the centre of the view (buttons and ⌘+/⌘−). */
+    const zoomCentered=(factor:number)=>{const element=canvasRef.current;if(!element)return;const next=Math.max(10,Math.min(300,zoomRef.current*factor));recordZoomAnchor(element.clientWidth/2,element.clientHeight/2);zoomRef.current=next;setZoom(next);};
+    // The board opens fitted to its screens.
+    const boardFitted=useRef(false);
     useEffect(()=>{
-        if(!boardMode||boardCentered.current)return;
-        const first=screens[0];
-        const frame=requestAnimationFrame(()=>{const element=canvasRef.current;if(!element)return;const scale=zoom/100;const cx=(CANVAS_WORKSPACE_MARGIN+(first?.x??0)+(first?HTML_DEVICE_FRAME[first.device].width/2:200))*scale,cy=(CANVAS_WORKSPACE_MARGIN+(first?.y??0)+380)*scale;element.scrollLeft=cx-element.clientWidth/2;element.scrollTop=cy-element.clientHeight/2;boardCentered.current=true;});
+        if(!boardMode||boardFitted.current||!screens.length)return;
+        const frame=requestAnimationFrame(()=>{boardFitted.current=true;fitBoard();});
         return()=>cancelAnimationFrame(frame);
-    },[boardMode,screens,zoom]);
+    });
+    // Board shortcuts: V/H tools, hold Space to pan, ⇧0/⇧1/⇧2 zoom presets, ⌘+/⌘− zoom.
+    useEffect(()=>{
+        if(!boardMode)return;
+        const typing=(target:EventTarget|null)=>target instanceof HTMLElement&&(['INPUT','TEXTAREA','SELECT'].includes(target.tagName)||target.isContentEditable||!!target.closest('[role="dialog"],[role="menu"]'));
+        const down=(event:KeyboardEvent)=>{
+            if(manualEditing||typing(event.target))return;
+            if((event.metaKey||event.ctrlKey)&&['=','+','-'].includes(event.key)){event.preventDefault();zoomCentered(event.key==='-'?1/1.25:1.25);return;}
+            if(event.metaKey||event.ctrlKey||event.altKey)return;
+            if(event.code==='Space'){event.preventDefault();if(!event.repeat)setSpacePan(true);return;}
+            if(event.shiftKey&&event.code==='Digit0'){event.preventDefault();zoomCentered(100/zoomRef.current);return;}
+            if(event.shiftKey&&event.code==='Digit1'){event.preventDefault();fitBoard();return;}
+            if(event.shiftKey&&event.code==='Digit2'){event.preventDefault();if(selectedScreenId)fitBoard(selectedScreenId);return;}
+            const key=event.key.toLowerCase();
+            if(key==='v')setBoardTool('select');else if(key==='h')setBoardTool('hand');
+            else if(key==='s'){event.preventDefault();openNewScreen(false);}else if(key==='i'){event.preventDefault();openNewScreen(true);}else if(key==='n'){event.preventDefault();void addNote();}
+            else if((event.key==='Delete'||event.key==='Backspace')&&selectedNoteId&&!editingNoteId){event.preventDefault();removeNote(selectedNoteId);}
+        };
+        const up=(event:KeyboardEvent)=>{if(event.code==='Space')setSpacePan(false);};
+        const blur=()=>setSpacePan(false);
+        window.addEventListener('keydown',down);window.addEventListener('keyup',up);window.addEventListener('blur',blur);
+        return()=>{window.removeEventListener('keydown',down);window.removeEventListener('keyup',up);window.removeEventListener('blur',blur);};
+    });
     const openComposer = (mode:ScopeMode) => {setLeftPanel('guild');setLeftOpen(true);setScopeRequest({mode,at:Date.now()});};
     const artboardWidth = isCanvas(draft) ? draft.width : mobile ? 390 : 1100;
     const artboardHeight = isCanvas(draft) ? draft.height : 1800;
@@ -644,7 +747,8 @@ export function ProjectEditor({ project, initialVersions, initialScreens = [], i
       let frame=0;
       const zoomBy=(factor:number,clientX:number,clientY:number)=>{const old=zoomRef.current,next=Math.max(10,Math.min(300,old*factor));if(next===old)return;const bounds=element.getBoundingClientRect();recordZoomAnchor(clientX-bounds.left,clientY-bounds.top);zoomRef.current=next;if(!frame)frame=requestAnimationFrame(()=>{frame=0;setZoom(zoomRef.current);});};
       // Scrolling the board zooms it; pinch (ctrl/⌘ + wheel, Safari gestures) is handled below for the whole page.
-      const wheel=(event:WheelEvent)=>{if(event.ctrlKey||event.metaKey)return;event.preventDefault();zoomBy(Math.exp(-event.deltaY*.005),event.clientX,event.clientY);};
+      // On the board, scrolling pans like any design tool (pinch or ⌘ + scroll zooms); the older canvas zooms on scroll.
+      const wheel=(event:WheelEvent)=>{if(event.ctrlKey||event.metaKey||boardModeRef.current)return;event.preventDefault();zoomBy(Math.exp(-event.deltaY*.005),event.clientX,event.clientY);};
       element.addEventListener('wheel',wheel,{passive:false});
       // Pinch never zooms the page: over the board (including the floating tool dock) it zooms the board.
       const release=captureBrowserZoom((target,x,y)=>{if(target instanceof Element&&target.closest('[role="dialog"]'))return false;const bounds=element.getBoundingClientRect();return x>=bounds.left&&x<=bounds.right&&y>=bounds.top&&y<=bounds.bottom;},zoomBy);
@@ -653,7 +757,7 @@ export function ProjectEditor({ project, initialVersions, initialScreens = [], i
     useLayoutEffect(()=>{const element=canvasRef.current;const anchor=zoomAnchorRef.current;if(element&&anchor&&zoom!==anchor.fromZoom){const ratio=zoom/anchor.fromZoom;element.scrollLeft=anchor.paddingLeft+(anchor.scrollLeft+anchor.anchorX-anchor.paddingLeft)*ratio-anchor.anchorX;element.scrollTop=anchor.paddingTop+(anchor.scrollTop+anchor.anchorY-anchor.paddingTop)*ratio-anchor.anchorY;zoomAnchorRef.current=null;}committedZoomRef.current=zoom;zoomRef.current=zoom;},[zoom]);
     useEffect(()=>{if(!isCanvas(draft)){canvasCentered.current=false;return;}if(canvasCentered.current)return;const frame=requestAnimationFrame(()=>{const element=canvasRef.current;if(!element)return;const origin=40000*zoom/100;element.scrollLeft=origin-element.clientWidth/2;element.scrollTop=origin-element.clientHeight/2;canvasCentered.current=true;});return()=>cancelAnimationFrame(frame);},[isCanvas(draft),zoom]);
     useEffect(() => {
-        const shortcuts=(event:KeyboardEvent)=>{if((event.target as HTMLElement).isContentEditable||event.target instanceof HTMLInputElement||event.target instanceof HTMLTextAreaElement)return;if(isCanvas(draft)&&selectedNode&&positionMode(selectedNode)==='auto'&&!event.metaKey&&!event.ctrlKey&&(event.key==='ArrowUp'||event.key==='ArrowDown')){const siblingId=adjacentCanvasSiblingId(draft.nodes,selectedNode.id,event.key as 'ArrowUp'|'ArrowDown');if(siblingId){event.preventDefault();reorderCanvasNode(selectedNode.id,siblingId,event.key==='ArrowDown');}return;}if(isCanvas(draft)&&selectedNode&&positionMode(selectedNode)==='absolute'&&!event.metaKey&&!event.ctrlKey&&['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)){event.preventDefault();const step=event.shiftKey?10:1;patchNode({x:selectedNode.x+(event.key==='ArrowLeft'?-step:event.key==='ArrowRight'?step:0),y:selectedNode.y+(event.key==='ArrowUp'?-step:event.key==='ArrowDown'?step:0)});return;}if(event.key==='Delete'||event.key==='Backspace'){if(isCanvas(draft)&&nodeId){event.preventDefault();removeNode();}}if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==='c'){if(isCanvas(draft)&&nodeId){event.preventDefault();copyNode();}}if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==='v'){if(isCanvas(draft)&&copiedNode.current){event.preventDefault();pasteNode();}}if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==='d'){if(isCanvas(draft)&&selectedNode){event.preventDefault();copyNode();pasteNode();}}if(!event.metaKey&&!event.ctrlKey){const key=event.key.toLowerCase();const tools:Record<string,CanvasTool>={v:'select',h:'hand',f:'frame',r:'rectangle',o:'ellipse',t:'text',l:'line',p:'path'};if(tools[key])setTool(tools[key]);}};
+        const shortcuts=(event:KeyboardEvent)=>{if((event.target as HTMLElement).isContentEditable||event.target instanceof HTMLInputElement||event.target instanceof HTMLTextAreaElement)return;if(isCanvas(draft)&&selectedNode&&positionMode(selectedNode)==='auto'&&!event.metaKey&&!event.ctrlKey&&(event.key==='ArrowUp'||event.key==='ArrowDown')){const siblingId=adjacentCanvasSiblingId(draft.nodes,selectedNode.id,event.key as 'ArrowUp'|'ArrowDown');if(siblingId){event.preventDefault();reorderCanvasNode(selectedNode.id,siblingId,event.key==='ArrowDown');}return;}if(isCanvas(draft)&&selectedNode&&positionMode(selectedNode)==='absolute'&&!event.metaKey&&!event.ctrlKey&&['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)){event.preventDefault();const step=event.shiftKey?10:1;patchNode({x:selectedNode.x+(event.key==='ArrowLeft'?-step:event.key==='ArrowRight'?step:0),y:selectedNode.y+(event.key==='ArrowUp'?-step:event.key==='ArrowDown'?step:0)});return;}if(event.key==='Delete'||event.key==='Backspace'){if(isCanvas(draft)&&nodeId){event.preventDefault();removeNode();}}if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==='c'){if(isCanvas(draft)&&nodeId){event.preventDefault();copyNode();}}if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==='v'){if(isCanvas(draft)&&copiedNode.current){event.preventDefault();pasteNode();}}if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==='d'){if(isCanvas(draft)&&selectedNode){event.preventDefault();copyNode();pasteNode();}}if(!event.metaKey&&!event.ctrlKey&&!boardMode){const key=event.key.toLowerCase();const tools:Record<string,CanvasTool>={v:'select',h:'hand',f:'frame',r:'rectangle',o:'ellipse',t:'text',l:'line',p:'path'};if(tools[key])setTool(tools[key]);}};
         window.addEventListener('keydown',shortcuts);
         const onKey = (event: KeyboardEvent) => { if (!(event.metaKey || event.ctrlKey))
             return; if (event.key.toLowerCase() === 's') {
@@ -686,7 +790,7 @@ export function ProjectEditor({ project, initialVersions, initialScreens = [], i
       <Stack direction="row" spacing={1} sx={{alignItems:"center"}}><TriangleAlert size={16} color="#a66815"/><Typography variant="body2" sx={{fontWeight:650,flex:1,fontSize:12.5}}>{layoutIssues.length} layout issue{layoutIssues.length===1?'':'s'}</Typography><Button size="small" onClick={()=>setShowLayoutIssues(value=>!value)} aria-expanded={showLayoutIssues} sx={{minWidth:0,p:.25,fontSize:11,textTransform:'none'}}>{showLayoutIssues?'Hide':'Review'}</Button></Stack>
       {showLayoutIssues&&<Stack spacing={.5} sx={{mt:1,pl:3}}>{layoutIssues.slice(0,5).map(issue=><Typography key={issue.key} variant="caption" color="text.secondary" sx={{lineHeight:1.35}}>{issue.message}</Typography>)}{layoutIssues.length>5&&<Typography variant="caption" color="text.secondary">+{layoutIssues.length-5} more issues</Typography>}</Stack>}
      </Box>}
-     {boardMode?(selectedScreen?.document?<Stack spacing={1.5}>{screenSelection&&<Box sx={{pb:1.5,borderBottom:'1px solid',borderColor:'divider'}}><Typography sx={inspectorHeading}>Selected</Typography><Typography variant="body2" sx={{mt:.75}}><Box component="code" sx={{fontSize:12,bgcolor:'#eef3f0',px:.5,borderRadius:.5}}>{screenSelection.tag}</Box> in section <b>{screenSelection.sectionId}</b></Typography>{screenSelection.text&&<Typography variant="caption" color="text.secondary" sx={{display:'block',mt:.5,overflowWrap:'anywhere'}}>“{screenSelection.text}”</Typography>}</Box>}<Typography sx={inspectorHeading}>Screen</Typography><Typography variant="body2">{selectedScreen.document.name} · {selectedScreen.document.device} {HTML_DEVICE_FRAME[selectedScreen.document.device].width}px · {selectedScreen.document.sections.length} sections</Typography><Box sx={{display:'flex',gap:.75,flexWrap:'wrap'}}>{Object.entries(selectedScreen.document.tokens.colors).map(([name,color])=><Tooltip key={name} title={`${name} ${color}`}><Box aria-label={`${name} ${color}`} sx={{width:22,height:22,borderRadius:'50%',bgcolor:color,border:'1px solid #d8e0e5'}}/></Tooltip>)}</Box><Typography variant="caption" color="text.secondary">{[selectedScreen.document.tokens.fontDisplay,selectedScreen.document.tokens.fontSans||'Inter'].filter(Boolean).join(' / ')}</Typography></Stack>:<Typography variant="body2" color="text.secondary">Select a screen on the board to see its sections, colours and fonts.</Typography>):!draft?<Stack spacing={2}><Typography variant="h6">A blank beginning</Typography><Typography variant="body2" color="text.secondary">Create your own design with text and shapes, or generate a draft from your brief.</Typography><Button variant="outlined" onClick={startBlank}>Start manually</Button></Stack>:isCanvas(draft)?selectedNode?<Stack spacing={0}>
+     {boardMode?(selectedScreen?.document?<ScreenInspector screen={selectedScreen.document} selection={screenSelection}/>:<Typography variant="body2" color="text.secondary">Select a screen on the board to see its sections, colours and fonts.</Typography>):!draft?<Stack spacing={2}><Typography variant="h6">A blank beginning</Typography><Typography variant="body2" color="text.secondary">Create your own design with text and shapes, or generate a draft from your brief.</Typography><Button variant="outlined" onClick={startBlank}>Start manually</Button></Stack>:isCanvas(draft)?selectedNode?<Stack spacing={0}>
       <Box sx={{pb:2}}><Typography sx={inspectorHeading}>Layer</Typography><TextField label="Layer name" size="small" fullWidth value={selectedNode.name} onChange={event=>patchNode({name:event.target.value})} slotProps={{htmlInput:{maxLength:100}}} sx={{mt:1}}/></Box>
       <Divider/>
       <Box sx={{py:2}}><Typography sx={inspectorHeading}>Position and size</Typography><TextField select label="Position mode" size="small" value={positionMode(selectedNode)} onChange={event=>patchNode({positionMode:event.target.value as CanvasNode['positionMode']})} sx={{mt:1.25}}><MenuItem value="auto">Auto layout</MenuItem><MenuItem value="absolute">Absolute</MenuItem></TextField><Box sx={{display:'grid',gridTemplateColumns:'repeat(2,minmax(0,1fr))',gap:1,mt:1.25}}>{(['x','y','width','height'] as const).map(key=><TextField key={key} size="small" fullWidth label={{x:'X',y:'Y',width:'Width',height:'Height'}[key]} type="number" value={Math.round(selectedGeometry?.[key]??selectedNode[key])} onChange={event=>patchNode({[key]:key==='width'||key==='height'?Math.max(1,Number(event.target.value)):Number(event.target.value)})} slotProps={{htmlInput:{'aria-label':{x:'X position',y:'Y position',width:'Width',height:'Height'}[key]}}}/>)}</Box>{!['line','path'].includes(selectedNode.type)&&<TextField label="Border radius" size="small" type="number" fullWidth value={selectedNode.radius} onChange={event=>patchNode({radius:Math.max(0,Math.min(1000,Number(event.target.value)))})} sx={{mt:1.25}}/>}</Box>
@@ -754,16 +858,29 @@ export function ProjectEditor({ project, initialVersions, initialScreens = [], i
      onManualEdit={()=>setManualEditing(true)} onHistory={()=>setRightMode('history')}
      onDeviceVersion={device=>void requestDeviceVersion(selectedScreen,device)} onVariations={()=>void requestVariations(selectedScreen)} onRegenerate={()=>void regenerateScreen(selectedScreen)} onDuplicate={()=>void duplicateScreen(selectedScreen)} onShare={()=>setSharing(selectedScreen)} onRemove={()=>setConfirmRemoveScreen(selectedScreen)}
      onNotice={(message,isError)=>isError?setError(message):setProviderNotice(message)}/></Box>}
-    <Box ref={canvasRef} className="canvas-scroll" onMouseDown={event=>{canvasPress.current={x:event.clientX,y:event.clientY};}} onClick={event=>{const press=canvasPress.current;canvasPress.current=null;if(!press||Math.hypot(event.clientX-press.x,event.clientY-press.y)>4)return;if(!(event.target instanceof Element&&event.target.closest('[data-screen-id]')))deselectScreen();}} sx={{cursor:panMode?'grab':'default',touchAction:'none',userSelect:'none',WebkitUserSelect:'none'}} onPointerDownCapture={event=>{pointers.current.set(event.pointerId,{x:event.clientX,y:event.clientY});if(pointers.current.size===2){const[a,b]=[...pointers.current.values()],bounds=event.currentTarget.getBoundingClientRect();pinch.current={distance:Math.hypot(a.x-b.x,a.y-b.y),zoom:zoomRef.current};recordZoomAnchor((a.x+b.x)/2-bounds.left,(a.y+b.y)/2-bounds.top);}}} onPointerMoveCapture={event=>{if(!pointers.current.has(event.pointerId))return;pointers.current.set(event.pointerId,{x:event.clientX,y:event.clientY});if(pinch.current&&pointers.current.size===2){const[a,b]=[...pointers.current.values()],bounds=event.currentTarget.getBoundingClientRect(),next=Math.max(10,Math.min(300,pinch.current.zoom*Math.hypot(a.x-b.x,a.y-b.y)/pinch.current.distance));recordZoomAnchor((a.x+b.x)/2-bounds.left,(a.y+b.y)/2-bounds.top);zoomRef.current=next;setZoom(next);event.stopPropagation();}}} onPointerUpCapture={event=>{pointers.current.delete(event.pointerId);pinch.current=null;}} onPointerCancelCapture={()=>{pointers.current.clear();pinch.current=null;}} onPointerDown={event=>{const target=event.target as Element;const blankCanvasDrag=isCanvas(draft)&&tool==='select'&&!target.closest('[data-node-id]');if(!panMode&&!blankCanvasDrag&&event.button!==1)return;if(event.button!==0&&event.button!==1)return;event.preventDefault();const el=event.currentTarget;drag.current={x:event.clientX,y:event.clientY,left:el.scrollLeft,top:el.scrollTop};el.setPointerCapture(event.pointerId);}} onPointerMove={event=>{if(!drag.current)return;event.currentTarget.scrollLeft=drag.current.left-(event.clientX-drag.current.x);event.currentTarget.scrollTop=drag.current.top-(event.clientY-drag.current.y);}} onPointerUp={()=>{drag.current=null;}} onPointerCancel={()=>{drag.current=null;}}>
+    <Box ref={canvasRef} className="canvas-scroll" onClick={event=>{const press=canvasPress.current;canvasPress.current=null;if(!press||Math.hypot(event.clientX-press.x,event.clientY-press.y)>4)return;if(!(event.target instanceof Element&&event.target.closest('[data-screen-id],[data-board-note]'))){deselectScreen();setSelectedNoteId(null);}}} sx={{cursor:(boardMode?boardTool==='hand'||spacePan:panMode)?'grab':'default','&:active':{cursor:(boardMode?boardTool==='hand'||spacePan:panMode)?'grabbing':undefined},touchAction:'none',userSelect:'none',WebkitUserSelect:'none'}} onPointerDownCapture={event=>{canvasPress.current={x:event.clientX,y:event.clientY};pointers.current.set(event.pointerId,{x:event.clientX,y:event.clientY});if(pointers.current.size===2){const[a,b]=[...pointers.current.values()],bounds=event.currentTarget.getBoundingClientRect();pinch.current={distance:Math.hypot(a.x-b.x,a.y-b.y),zoom:zoomRef.current};recordZoomAnchor((a.x+b.x)/2-bounds.left,(a.y+b.y)/2-bounds.top);}}} onPointerMoveCapture={event=>{if(!pointers.current.has(event.pointerId))return;pointers.current.set(event.pointerId,{x:event.clientX,y:event.clientY});if(pinch.current&&pointers.current.size===2){const[a,b]=[...pointers.current.values()],bounds=event.currentTarget.getBoundingClientRect(),next=Math.max(10,Math.min(300,pinch.current.zoom*Math.hypot(a.x-b.x,a.y-b.y)/pinch.current.distance));recordZoomAnchor((a.x+b.x)/2-bounds.left,(a.y+b.y)/2-bounds.top);zoomRef.current=next;setZoom(next);event.stopPropagation();}}} onPointerUpCapture={event=>{pointers.current.delete(event.pointerId);pinch.current=null;}} onPointerCancelCapture={()=>{pointers.current.clear();pinch.current=null;}} onPointerDown={event=>{const target=event.target as Element;const blankCanvasDrag=boardMode?!target.closest('[data-screen-id],[data-board-note]'):isCanvas(draft)&&tool==='select'&&!target.closest('[data-node-id]');const boardPan=boardMode&&(boardTool==='hand'||spacePan);if(!(boardMode?boardPan:panMode)&&!blankCanvasDrag&&event.button!==1)return;if(event.button!==0&&event.button!==1)return;event.preventDefault();const el=event.currentTarget;drag.current={x:event.clientX,y:event.clientY,left:el.scrollLeft,top:el.scrollTop};el.setPointerCapture(event.pointerId);}} onPointerMove={event=>{if(!drag.current)return;event.currentTarget.scrollLeft=drag.current.left-(event.clientX-drag.current.x);event.currentTarget.scrollTop=drag.current.top-(event.clientY-drag.current.y);}} onPointerUp={()=>{drag.current=null;}} onPointerCancel={()=>{drag.current=null;}}>
      <Box className="canvas-content"><Box sx={{width:workspaceWidth*zoom/100,height:workspaceHeight*zoom/100,position:'relative',flex:'none'}}><Box className="design-artboard" sx={{width:workspaceWidth,height:workspaceHeight,transform:`scale(${zoom/100})`,...(canvasDocument||boardMode?{background:'transparent',boxShadow:'none'}:{})}}>
-     {boardMode?<BoardView projectId={project.id} screens={screens} draft={boardDraft} zoom={zoom} selectedScreenId={selectedScreenId} selection={screenSelection} onSelect={(screenId,selection)=>{if(screenId!==selectedScreenId)setScreenSelection(null);setSelectedScreenId(screenId);setScreenSelection(selection);if(selection)setRightMode('properties');}} onMove={moveScreen} onRename={renameScreen}/>:canvasDocument?<CanvasSurface document={canvasDocument} projectId={project.id} tool={tool} framePreset={framePresetSize} selected={nodeId} agentCursor={canvasPreview?.status==='running'?{role:canvasPreview.role,nodeIds:canvasPreview.nodeIds}:undefined} onSelect={id=>{setNodeId(id);setRightMode(id||canvasDocument.nodes.some(node=>!node.hidden&&(node.screen||node.type==='frame'))?'properties':null);}} onChange={setDraft} onCommit={commitCanvas} onToolChange={setTool} onGeometryChange={setSelectedGeometry} disabled={!!visiblePipelinePreview||saving||uploadingImage}/>:draft?<iframe title="Generated landing page" srcDoc={previewHtml} sandbox="" referrerPolicy="no-referrer" style={{height:artboardHeight,pointerEvents:'none'}}/>:null}
+     {boardMode?<BoardView projectId={project.id} screens={screens} draft={boardDraft} zoom={zoom} selectedScreenId={selectedScreenId} selection={screenSelection} onSelect={(screenId,selection)=>{setSelectedNoteId(null);if(screenId!==selectedScreenId)setScreenSelection(null);setSelectedScreenId(screenId);setScreenSelection(selection);if(selection)setRightMode('properties');}} onMove={moveScreen} onRename={renameScreen}
+      notes={notes} selectedNoteId={selectedNoteId} editingNoteId={editingNoteId} onSelectNote={noteId=>{deselectScreen();setSelectedNoteId(noteId);}} onEditNote={setEditingNoteId} onNoteChange={changeNote} onNoteRemove={removeNote}/>:canvasDocument?<CanvasSurface document={canvasDocument} projectId={project.id} tool={tool} framePreset={framePresetSize} selected={nodeId} agentCursor={canvasPreview?.status==='running'?{role:canvasPreview.role,nodeIds:canvasPreview.nodeIds}:undefined} onSelect={id=>{setNodeId(id);setRightMode(id||canvasDocument.nodes.some(node=>!node.hidden&&(node.screen||node.type==='frame'))?'properties':null);}} onChange={setDraft} onCommit={commitCanvas} onToolChange={setTool} onGeometryChange={setSelectedGeometry} disabled={!!visiblePipelinePreview||saving||uploadingImage}/>:draft?<iframe title="Generated landing page" srcDoc={previewHtml} sandbox="" referrerPolicy="no-referrer" style={{height:artboardHeight,pointerEvents:'none'}}/>:null}
      </Box></Box></Box>
     </Box>
-    <Paper className="editor-tool-dock" elevation={8} role="toolbar" aria-label="Design tools" sx={{position:'absolute',bottom:24,left:'50%',transform:'translateX(-50%)',zIndex:5,p:.75,borderRadius:1.5,bgcolor:'#24282e',border:'1px solid #3a424a',boxShadow:'0 10px 34px #121b2755',display:'flex',alignItems:'center',gap:.35,maxWidth:'calc(100% - 24px)',overflowX:'auto'}}>
+    {boardMode&&!screens.length&&!notes.length&&!boardDraft&&!newScreenOpen&&<Box role="region" aria-label="Empty board" sx={{position:'absolute',inset:0,display:'grid',placeItems:'center',pointerEvents:'none',zIndex:4}}>
+     <Box sx={{pointerEvents:'auto',textAlign:'center',maxWidth:380,px:3}}>
+      <Box sx={{width:44,height:44,mx:'auto',mb:2,borderRadius:'12px',display:'grid',placeItems:'center',bgcolor:'#fff',border:'1px solid #e2e7e5',boxShadow:'0 1px 2px rgba(16,24,40,.05)',color:'#24533e'}}><SquarePlusIcon size={20} strokeWidth={1.8}/></Box>
+      <Typography sx={{fontSize:16,fontWeight:650,color:'#1f2a33'}}>Design your first screen</Typography>
+      <Typography sx={{fontSize:13.5,color:'#5b6770',mt:.75,lineHeight:1.55}}>Describe it, pick mobile, tablet or desktop, and add reference images if you have them. The agents draw it here, section by section.</Typography>
+      <Button variant="contained" disableElevation onClick={()=>openNewScreen(false)} sx={{mt:2.25,textTransform:'none',fontWeight:600,borderRadius:'9px',bgcolor:'#24533e','&:hover':{bgcolor:'#1c4332'}}}>New screen<Box component="span" sx={{ml:1,fontSize:11.5,opacity:.7}}>S</Box></Button>
+     </Box>
+    </Box>}
+    {boardMode?<>
+     <BoardDock tool={boardTool} onTool={setBoardTool} composing={newScreenOpen} onNewScreen={()=>newScreenOpen?setNewScreenOpen(false):openNewScreen(false)} onReference={()=>openNewScreen(true)} onNote={()=>void addNote()}/>
+     {newScreenOpen&&<NewScreenComposer projectId={project.id} pickOnOpen={pickReference} onClose={()=>setNewScreenOpen(false)} onQueued={device=>{setNewScreenOpen(false);setLeftPanel('guild');setLeftOpen(true);window.dispatchEvent(new Event('guildos:tasks-updated'));setProviderNotice(`The agents are designing your new ${device} screen. It appears on the board as it is drawn.`);}}/>}
+     <ZoomControl zoom={zoom} onZoom={zoomCentered} onReset={()=>zoomCentered(100/zoomRef.current)} onFitAll={()=>fitBoard()} onFitSelection={()=>fitBoard(selectedScreenId)} canFitSelection={!!selectedScreenId}/>
+    </>:<Paper className="editor-tool-dock" elevation={8} role="toolbar" aria-label="Design tools" sx={{position:'absolute',bottom:24,left:'50%',transform:'translateX(-50%)',zIndex:5,p:.75,borderRadius:1.5,bgcolor:'#24282e',border:'1px solid #3a424a',boxShadow:'0 10px 34px #121b2755',display:'flex',alignItems:'center',gap:.35,maxWidth:'calc(100% - 24px)',overflowX:'auto'}}>
      {([{id:'select',label:'Select · V',Icon:NearMeOutlined},{id:'hand',label:'Hand · H',Icon:PanToolOutlined},{id:'frame',label:'Frame · F',Icon:CropFreeOutlined},{id:'rectangle',label:'Rectangle · R',Icon:RectangleOutlined},{id:'ellipse',label:'Ellipse · O',Icon:CircleOutlined},{id:'text',label:'Text · T',Icon:TextFieldsOutlined},{id:'line',label:'Line · L',Icon:HorizontalRuleOutlined},{id:'path',label:'Pencil · P',Icon:DrawOutlined}] as const).map((item,index)=><Box key={item.id} sx={{display:'flex',alignItems:'center'}}>{[2,3,5,6].includes(index)&&<Divider orientation="vertical" flexItem sx={{mx:.45,borderColor:'#515960'}}/>}<Tooltip arrow placement="top" title={<Box sx={{display:'flex',alignItems:'center',gap:1.5}}><span>{item.label.split(' · ')[0]}</span><Box component="span" sx={{fontSize:'.6875rem',fontWeight:600,color:'#aeb4ba'}}>{item.label.split(' · ')[1]}</Box></Box>} slotProps={{tooltip:{sx:{bgcolor:'#202124',color:'#f5f5f5',fontSize:'.75rem',fontWeight:500,lineHeight:1,borderRadius:'6px',px:1.1,py:.75,boxShadow:'0 4px 12px rgba(0,0,0,.22)'}},arrow:{sx:{color:'#202124'}}}}><span><IconButton aria-label={item.label.split(' ·')[0]+' tool'} aria-pressed={tool===item.id} disabled={!!visiblePipelinePreview||saving||(!!draft&&!isCanvas(draft)&&!['select','hand'].includes(item.id))} onClick={()=>{if(!draft)setDraft(blankCanvas());if(item.id==='frame'){setNodeId('');setRightMode('properties');}setTool(item.id);}} sx={{width:40,height:40,borderRadius:'8px',bgcolor:tool===item.id?'#4e7cae':'transparent',color:tool===item.id?'#fff':'#d9dfe4','&:hover':{bgcolor:tool===item.id?'#4e7cae':'#3b4249'},'&.Mui-disabled':{color:'#777f86'}}}><item.Icon size={21}/></IconButton></span></Tooltip></Box>)}
      <Divider orientation="vertical" flexItem sx={{mx:.45,borderColor:'#515960'}}/><Tooltip title="Insert image · PNG, JPEG, or WebP"><span><IconButton aria-label="Insert image" disabled={saving||uploadingImage||!isCanvas(draft)} onClick={()=>{imageReplaceId.current=null;imageInput.current?.click();}} sx={{width:40,height:40,borderRadius:'8px',color:'#d9dfe4','&:hover':{bgcolor:'#3b4249'}}}><ImagePlusOutlined size={21}/></IconButton></span></Tooltip>
      <Tooltip title="Insert icon · free Lucide library"><span><IconButton aria-label="Insert icon" disabled={saving||!isCanvas(draft)} onClick={()=>{iconReplaceId.current=null;setIconPickerOpen(true);}} sx={{width:40,height:40,borderRadius:'8px',color:'#d9dfe4','&:hover':{bgcolor:'#3b4249'}}}><ShapesOutlined size={21}/></IconButton></span></Tooltip>
-    </Paper>
+    </Paper>}
    </Box>
   </Box>
   <Dialog open={iconPickerOpen} onClose={()=>{setIconPickerOpen(false);iconReplaceId.current=null;}} fullWidth maxWidth="sm" aria-labelledby="icon-picker-title"><DialogTitle id="icon-picker-title" sx={{pb:1}}>Choose an icon</DialogTitle><DialogContent><TextField autoFocus fullWidth size="small" label="Search icons" value={iconQuery} onChange={event=>setIconQuery(event.target.value)} sx={{mt:1}}/><Typography variant="caption" color="text.secondary" sx={{display:'block',mt:1}}>Free Lucide icons · ISC license</Typography><Box sx={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(72px,1fr))',gap:1,mt:2,minHeight:80}}>{iconLoading?Array.from({length:12},(_,index)=><Skeleton key={index} variant="rounded" height={72}/>):iconResults.map(name=><Button key={name} aria-label={`Insert ${name} icon`} onClick={()=>insertCanvasIcon(name)} sx={{display:'flex',flexDirection:'column',gap:.75,minWidth:0,p:1,border:'1px solid #e1e6ea',borderRadius:1.5,textTransform:'none',color:'text.primary','&:hover':{bgcolor:'#f1f6f2'}}}><Box component="img" alt="" src={canvasIconUrl(name,'#202b38',2)} sx={{width:24,height:24}}/><Typography variant="caption" sx={{maxWidth:'100%',fontSize:10,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{name}</Typography></Button>)}</Box>{!iconLoading&&!iconResults.length&&<Typography variant="body2" color="text.secondary" sx={{mt:2}}>No matching icons. Try a shorter term.</Typography>}</DialogContent><DialogActions><Button onClick={()=>{setIconPickerOpen(false);iconReplaceId.current=null;}}>Close</Button></DialogActions></Dialog>

@@ -59,13 +59,16 @@ test('a section draft renders live: the agent cursor works over pending sections
  await expect(cursor).toHaveCount(0);
  await expect(frame.getByRole('heading', { name: 'Layers made for slow mornings' })).toBeVisible({ timeout: 10000 });
 
- // Wheel and pinch over the screen zoom the canvas, never the page.
+ // On the board, scrolling pans like any design tool; pinch zooms the board, never the page.
  const box = (await iframe.boundingBox())!;
  const scale = async () => (await iframe.boundingBox())!.width;
  const before = box.width;
+ const scroller = page.locator('.canvas-scroll');
+ const scrolled = await scroller.evaluate(element => element.scrollTop);
  await page.mouse.move(box.x + box.width / 2, box.y + 60);
- await page.mouse.wheel(0, -240);
- await expect.poll(scale).toBeGreaterThan(before);
+ await page.mouse.wheel(0, 240);
+ await expect.poll(() => scroller.evaluate(element => element.scrollTop)).toBeGreaterThan(scrolled);
+ expect(await scale()).toBe(before);
  expect(await page.evaluate(() => window.visualViewport?.scale ?? 1)).toBe(1);
  // Trackpad pinch (ctrl + wheel) zooms the board, and is cancelled everywhere else so the page never zooms.
  const zoomed = await scale();
@@ -79,8 +82,10 @@ test('a section draft renders live: the agent cursor works over pending sections
  expect(await pinchElsewhere()).toEqual([true, true]);
  expect(await scale()).toBe(settled);
 
- // Clicking a generated link selects it instead of navigating the frame to the app.
+ // ⇧1 fits the board again. Clicking a generated link selects it instead of navigating the frame to the app.
+ await page.keyboard.press('Shift+Digit1');
  const link = frame.getByRole('link', { name: 'Shop the edit' });
+ await expect.poll(async () => (await link.boundingBox())?.y ?? -1).toBeGreaterThan(80);
  const linkBox = (await link.boundingBox())!;
  await page.mouse.click(linkBox.x + linkBox.width / 2, linkBox.y + linkBox.height / 2);
  await expect(page.locator('[data-screen-selection]')).toBeVisible();

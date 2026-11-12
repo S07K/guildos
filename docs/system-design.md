@@ -294,6 +294,10 @@ flowchart LR
 
 | Mode | How | What is saved |
 |---|---|---|
+| Board dock | Select (V), Hand (H), New screen (S), Reference image (I), Note (N); scroll pans, pinch or ⌘ + scroll zooms, hold Space to pan | nothing |
+| Zoom control | −, level menu (100% ⇧0, fit all ⇧1, fit selection ⇧2), +; the board opens fitted to its screens | nothing |
+| New screen | device (mobile / tablet / desktop), a prompt and up to 4 reference images (pick, paste or drop) | a task; the agents add the screen |
+| Notes | sticky notes anywhere on the board: write, drag, recolour, delete | `studio_board_notes` |
 | Select | click a screen; click inside it to pick an element; drag a title to move | position via `PATCH /api/studio/screens` |
 | Prompt edit | the chat shows the selection as a chip; choose Section edit, Add section or Global edit | a new screen version from the agents |
 | Manual Edit (⌥M) | full-screen editor: layer tree, style panel, inline text editing, blocks, undo/redo, device widths | `POST /api/studio/screens` → new version (sanitised again on the server) |
@@ -302,8 +306,13 @@ flowchart LR
 | Copy / Export, Code, Preview | standalone HTML, code view, device preview | nothing |
 | More ▾ Share (⌥L) | a view-only link to the screen or the whole board; copy or revoke it later | a row in `studio_share_links` |
 
-An empty project keeps a freeform canvas (shapes, text, images) until its first screen
-exists; from then on it is a board.
+A new project opens as an empty board with a "Design your first screen" start. Only projects
+that already hold freeform canvas or landing-page work keep the older canvas editor.
+
+**Reference images.** Attached images are stored as private project images and passed to the
+planner (and, for a section edit, the section builder) as image inputs. Models that cannot read
+images get the same request without them, and the conversation says so. References are read
+only from the project's own storage path.
 
 ---
 
@@ -540,6 +549,7 @@ waiting and, if so, wakes the worker up."
 | `GET/POST /api/studio/tasks` | task list; stop, retry, approve |
 | `POST /api/studio/agents/:role/messages` | direct chat with one agent |
 | `/api/studio/connections/*` | provider connections (ChatGPT plan, local Claude Code) |
+| `GET/POST/PATCH /api/studio/board-notes` | list, add, edit, move, recolour and delete sticky notes |
 | `GET/POST/DELETE /api/studio/share` | list, create (or reuse) and revoke share links |
 | `GET /share/:token`, `GET /share/:token/images/:id` | public, view-only page and its images (no sign-in, `noindex`) |
 | `POST /api/worker` | drain the queue (bearer secret) |

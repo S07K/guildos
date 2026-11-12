@@ -45,7 +45,7 @@ export function useFloatingAnchor(container: React.RefObject<HTMLElement | null>
    const host = container.current, target = host?.querySelector(selector);
    if (host && target) {
     const outer = host.getBoundingClientRect(), inner = target.getBoundingClientRect();
-    const left = Math.round(Math.min(Math.max(inner.left + inner.width / 2 - outer.left, 220), outer.width - 220)), top = Math.round(Math.max(inner.top - outer.top - 14, 64));
+    const left = Math.round(Math.min(Math.max(inner.left + inner.width / 2 - outer.left, 280), outer.width - 280)), top = Math.round(Math.max(inner.top - outer.top - 10, 64));
     setPosition(current => current && current.left === left && current.top === top ? current : { left, top });
    } else setPosition(current => current ? null : current);
    frame = requestAnimationFrame(measure);
