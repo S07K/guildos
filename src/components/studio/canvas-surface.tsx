@@ -4,8 +4,8 @@ import { AutoLayoutSurface } from './auto-layout-surface';
 import { canvasElement, localPointer, measureCanvasNode } from './canvas-geometry';
 import { absoluteNode, createCanvasNode, drawingBounds, normalizeCanvasPositions, type NodeGeometry } from '@/lib/studio/canvas-position';
 import { CANVAS_WORKSPACE_SIZE, type CanvasDocument, type CanvasNode } from '@/lib/studio/canvas';
-import { agentIdentity, type AgentRole } from '@/lib/studio/agent-roles';
-import { AgentMark } from './agent-identity';
+import type { AgentRole } from '@/lib/studio/agent-roles';
+import { AgentCursor } from './agent-cursor';
 export type CanvasTool = 'select' | 'hand' | 'frame' | 'rectangle' | 'ellipse' | 'text' | 'line' | 'path';
 
 type Gesture = {
@@ -153,7 +153,7 @@ export function CanvasSurface({document:doc,projectId,tool,selected,onSelect,onC
   }}
   onPointerDown={down} onPointerMove={event=>{if(action.current?.pointerId===event.pointerId){update(event);event.stopPropagation();}}} onPointerUp={up} onPointerCancel={cancel} onLostPointerCapture={cancel}>
   <AutoLayoutSurface document={display} projectId={projectId} onChange={onChange} editing={editing} onEditingChange={setEditing}/>
-  {agentCursor&&cursorPosition&&<div data-export-ignore="true" data-agent-cursor={agentCursor.role} aria-label={`${agentIdentity[agentCursor.role].persona} is working on the canvas`} style={{position:'absolute',left:cursorPosition.x,top:cursorPosition.y,zIndex:10,pointerEvents:'none',display:'flex',alignItems:'center',gap:6,transform:'translate(-7px,-8px)',filter:'drop-shadow(0 2px 5px #17211e30)'}}><svg width="18" height="22" viewBox="0 0 18 22" aria-hidden="true" style={{flex:'none'}}><path d="M2 1.5 16 12l-6.1.9 3.2 6.1-2.5 1.3-3.2-6.2-4.4 4.1Z" fill={agentIdentity[agentCursor.role].color} stroke="white" strokeWidth="1.5" strokeLinejoin="round"/></svg><span style={{display:'inline-flex',alignItems:'center',gap:5,padding:'3px 8px 3px 4px',borderRadius:999,background:'white',border:`1px solid ${agentIdentity[agentCursor.role].color}55`,color:'#263238',font:'600 11px/1.2 system-ui,sans-serif',whiteSpace:'nowrap'}}><AgentMark role={agentCursor.role} size={20}/>{agentIdentity[agentCursor.role].persona}</span></div>}
+  {agentCursor&&cursorPosition&&<AgentCursor role={agentCursor.role} x={cursorPosition.x} y={cursorPosition.y}/>}
   {selectionBounds&&selected&&tool==='select'&&!disabled&&!editing&&<div data-export-ignore="true" data-selection-overlay="true" style={{position:'absolute',pointerEvents:'none',left:selectionBounds.x,top:selectionBounds.y,width:selectionBounds.width,height:selectionBounds.height,outline:'1px solid #4d76af',outlineOffset:2,zIndex:2}}>
    <span data-export-ignore="true" data-resize="true" data-resize-node={selected} aria-label="Resize selected layer" style={{position:'absolute',right:-7,bottom:-7,width:9,height:9,boxSizing:'border-box',background:'#fff',border:'1px solid #4d76af',pointerEvents:'auto',cursor:'nwse-resize'}}/>
   </div>}

@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { randomUUID, createHash } from 'node:crypto';
 const user = { id: '00000000-0000-4000-8000-000000000001', email: 'studio-test@example.com', aud: 'authenticated', role: 'authenticated', app_metadata: {}, user_metadata: {}, created_at: new Date().toISOString() };
 const token = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url') + '.' + Buffer.from(JSON.stringify({ sub: user.id, session_id:'00000000-0000-4000-8000-000000000002', exp: Math.floor(Date.now()/1000)+3600, role: 'authenticated' })).toString('base64url') + '.fixture-signature';
-const tables = { studio_workspaces: [], studio_projects: [], studio_keys: [], studio_versions: [], studio_agent_notes: [], studio_agent_messages: [], studio_canvas_commits: [], studio_tasks: [], studio_openrouter_keys: [], studio_groq_keys: [], studio_anthropic_keys: [], studio_trial_runs: [], studio_task_events: [], studio_task_subtasks: [], studio_generation_limits: [] };
+const tables = { studio_workspaces: [], studio_projects: [], studio_keys: [], studio_versions: [], studio_screens: [], studio_screen_versions: [], studio_agent_notes: [], studio_agent_messages: [], studio_canvas_commits: [], studio_tasks: [], studio_openrouter_keys: [], studio_groq_keys: [], studio_anthropic_keys: [], studio_trial_runs: [], studio_task_events: [], studio_task_subtasks: [], studio_generation_limits: [], studio_pipeline_drafts: [] };
 const storageFiles=new Set();
 let failedStorageDeletes=0;
 let projectReadDelay=null;
@@ -59,6 +59,44 @@ const server = createServer(async (req, res) => {
   tables.studio_canvas_commits.push({project_id:body.p_project,request_id:body.p_request_id,version_id:version.id,hash});
   return send({status:'committed',version});
  }
+ // Mirrors commit_studio_screen: a new screen (p_screen null) or the next version of one, with optimistic concurrency.
+ if (url.pathname === '/rest/v1/rpc/commit_studio_screen') {
+  if (!admin) return send({},403);
+  const project = tables.studio_projects.find(p=>p.id===body.p_project && p.workspace_id===body.p_workspace);
+  if (!project) return send({status:'not_found'});
+  let screen = body.p_screen ? tables.studio_screens.find(row=>row.id===body.p_screen && row.project_id===project.id && !row.deleted_at) : null;
+  if (body.p_screen && !screen) return send({status:'not_found'});
+  if ((screen?.head_version_id || null)!==body.p_expected) return send({status:'conflict',currentVersionId:screen?.head_version_id || null});
+  const now = new Date().toISOString();
+  if (!screen) { screen = {id:randomUUID(),project_id:project.id,workspace_id:project.workspace_id,name:body.p_document.name,device:body.p_document.device,x:body.p_x ?? 0,y:body.p_y ?? 0,head_version_id:null,deleted_at:null,created_at:now,updated_at:now}; tables.studio_screens.push(screen); }
+  const version = {id:randomUUID(),screen_id:screen.id,project_id:project.id,workspace_id:project.workspace_id,document:body.p_document,feedback:body.p_feedback,model:body.p_model,input_tokens:body.p_input,output_tokens:body.p_output,created_at:now};
+  tables.studio_screen_versions.push(version);
+  Object.assign(screen,{head_version_id:version.id,name:body.p_document.name,updated_at:now});
+  return send({status:'committed',screen,version});
+ }
+ // Seeds a board screen with its first version, as a finished agent task would.
+ if (url.pathname === '/testing/screen' && req.method === 'POST') {
+  const project = tables.studio_projects.find(row => row.id === body.project_id);
+  if (!project) return send({ message: 'Project not found' }, 404);
+  const now = new Date().toISOString(), screenId = body.screen_id || randomUUID(), versionId = randomUUID();
+  let screen = tables.studio_screens.find(row => row.id === screenId);
+  if (!screen) { screen = { id: screenId, project_id: project.id, workspace_id: project.workspace_id, name: body.document.name, device: body.document.device, x: body.x ?? 0, y: body.y ?? 0, deleted_at: null, created_at: now }; tables.studio_screens.push(screen); }
+  tables.studio_screen_versions.push({ id: versionId, screen_id: screenId, project_id: project.id, workspace_id: project.workspace_id, document: body.document, feedback: body.feedback || 'Generated', model: 'test', input_tokens: 0, output_tokens: 0, created_at: now });
+  Object.assign(screen, { head_version_id: versionId, name: body.document.name, updated_at: now });
+  return send(screen);
+ }
+ // Seeds or advances one live agent task with its private pipeline draft.
+ if (url.pathname === '/testing/live' && req.method === 'POST') {
+  const project = tables.studio_projects.find(row => row.id === body.project_id);
+  if (!project) return send({ message: 'Project not found' }, 404);
+  const now = new Date().toISOString();
+  let task = tables.studio_tasks.find(row => row.id === body.task_id);
+  if (!task) { task = { id: body.task_id, project_id: project.id, workspace_id: project.workspace_id, parent_task_id: null, agent_role: 'ui_designer', instruction: 'Design the home screen', status: 'running', created_at: now }; tables.studio_tasks.push(task); }
+  Object.assign(task, { status: body.status || 'running', updated_at: now });
+  tables.studio_pipeline_drafts = tables.studio_pipeline_drafts.filter(row => row.task_id !== task.id);
+  tables.studio_pipeline_drafts.push({ task_id: task.id, project_id: project.id, workspace_id: project.workspace_id, state: body.state, updated_at: now });
+  return send({ ok: true });
+ }
  if (url.pathname === '/testing/version' && req.method === 'POST') {
   const project = tables.studio_projects.find(row => row.id === body.project_id);
   if (!project) return send({ message: 'Project not found' }, 404);
@@ -87,7 +125,14 @@ const server = createServer(async (req, res) => {
  const name = url.pathname.split('/').pop();
  if (!Object.hasOwn(tables, name)) return send({ message: 'Not found' }, 404);
  if(name==='studio_projects'&&req.method==='GET'&&projectReadDelay&&url.searchParams.get('id')===`eq.${projectReadDelay.id}`){const delay=projectReadDelay.ms;projectReadDelay=null;await new Promise(resolve=>setTimeout(resolve,delay));}
- const matches = row => [...url.searchParams].every(([field, value]) => value.startsWith('eq.') ? String(row[field]) === value.slice(3) : value.startsWith('gte.') ? String(row[field]) >= value.slice(4) : true);
+ const matches = row => [...url.searchParams].every(([field, value]) => value.startsWith('eq.') ? String(row[field]) === value.slice(3) : value.startsWith('gte.') ? String(row[field]) >= value.slice(4)
+  : value.startsWith('in.(') ? value.slice(4, -1).split(',').map(item => item.replace(/^"|"$/g, '')).includes(String(row[field])) : value === 'is.null' ? row[field] == null : true);
+ if (req.method === 'PATCH') {
+  const updated = tables[name].filter(matches);
+  updated.forEach(row => Object.assign(row, body));
+  if (req.headers.accept?.includes('vnd.pgrst.object')) return updated.length === 1 ? send(updated[0]) : send({ code: 'PGRST116', details: 'The result contains ' + updated.length + ' rows' }, 406);
+  return send(updated);
+ }
  if (req.method === 'POST') {
   const incoming = Array.isArray(body) ? body[0] : body;
   if (name === 'studio_workspaces' && tables[name].some(row => row.owner_id === incoming.owner_id)) return send({ code: '23505', message: 'Duplicate owner' }, 409);
