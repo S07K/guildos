@@ -4,6 +4,7 @@ import { scheduleWorker } from '@/lib/studio/worker-trigger';
 import { adminClient, authConfig, sessionClient } from '@/lib/studio/supabase';
 import { agentIdentity, agentRoles } from '@/lib/studio/agent-roles';
 import { encodeLayerReference } from '@/lib/studio/revision-scope';
+import { encodeDeviceVersion, encodeScreenScope, encodeScreenTarget, isScreenScope, stripScreenScope } from '@/lib/studio/html-screen';
 
 export const runtime = 'nodejs';
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -43,7 +44,7 @@ export async function GET(request: Request) {
   const sourceTask = (tasks || []).find(item => item.source_note_id === note.id);
   const legacy = sourceTask && sourceTask.instruction === note.body && /^Revise the completed work for:/.test(note.body) && note.body.includes('Requested changes:');
   const legacyBody = legacy ? note.body.split('Requested changes:').at(-1)!.trim() : note.body;
-  const displayContent = sourceTask && sourceTask.instruction === note.body ? legacyBody.replace(/\n?\u2063guildos-layer:[a-z0-9-]{1,80}\u2063/g,'') : legacyBody;
+  const displayContent = sourceTask && sourceTask.instruction === note.body ? stripScreenScope(legacyBody.replace(/\n?\u2063guildos-layer:[a-z0-9-]{1,80}\u2063/g,'')) : legacyBody;
   const task = (tasks || []).find(item => item.summary && item.summary === note.body);
   const speaker = task ? latestTaskSpeaker.get(task.id) : undefined;
   return speaker && agentRoles.includes(speaker as typeof agentRoles[number]) ? { ...note, author_role: speaker } : { ...note, displayContent };
@@ -59,6 +60,9 @@ export async function GET(request: Request) {
  return json({ notes: [...savedNotes, ...progressNotes].filter(note=>!(note.id.startsWith('event-')&&note.body==='The complete screen is ready for review.')).sort((a,b) => a.created_at.localeCompare(b.created_at)) });
 }
 
+/** Appends an invisible scope marker (layer or screen section) that the worker reads; the text stays within 2000 characters. */
+const withMarker = (text: string, marker: string) => marker ? `${text.slice(0, 2000 - marker.length - 1)}\n${marker}` : text;
+
 export async function POST(request: Request) {
  const origin = request.headers.get('origin');
  const expected = process.env.STUDIO_APP_URL || new URL(request.url).origin;
@@ -67,22 +71,30 @@ export async function POST(request: Request) {
  const client = await sessionClient();
  const { data: { user } } = await studioUser(client);
  if (!user) return json({ error: 'Your session expired. Sign in again.' }, 401);
- let body: { projectId?: unknown; versionId?: unknown; anchor?: unknown; mentionedRole?: unknown; targetLayerId?:unknown; text?: unknown; displayMessage?: unknown; requestId?: unknown };
+ let body: { projectId?: unknown; versionId?: unknown; anchor?: unknown; mentionedRole?: unknown; targetLayerId?:unknown; screenScope?: unknown; screenId?: unknown; deviceVersion?: unknown; text?: unknown; displayMessage?: unknown; requestId?: unknown };
  try {
   const raw = await request.text();
   if (raw.length > 16000) return json({ error: 'Comment is too long.' }, 413);
   body = JSON.parse(raw);
  } catch { return json({ error: 'Invalid comment.' }, 400); }
- if (!body || typeof body.displayMessage !== 'string' || !body.displayMessage.trim() || body.displayMessage.length > 2000 || typeof body.requestId !== 'string' || !uuid.test(body.requestId) || typeof body.projectId !== 'string' || !uuid.test(body.projectId) || typeof body.text !== 'string' || !body.text.trim() || body.text.length > 2000 || body.targetLayerId!==undefined&&(typeof body.targetLayerId!=='string'||!/^[a-z0-9-]{1,80}$/i.test(body.targetLayerId)) || !anchors.includes(String(body.anchor)) || (body.mentionedRole !== null && body.mentionedRole !== undefined && !agentRoles.includes(body.mentionedRole as typeof agentRoles[number])) || (body.versionId && (typeof body.versionId !== 'string' || !uuid.test(body.versionId)))) return json({ error: 'Invalid comment.' }, 400);
+ if (!body || typeof body.displayMessage !== 'string' || !body.displayMessage.trim() || body.displayMessage.length > 2000 || typeof body.requestId !== 'string' || !uuid.test(body.requestId) || typeof body.projectId !== 'string' || !uuid.test(body.projectId) || typeof body.text !== 'string' || !body.text.trim() || body.text.length > 2000 || (body.screenScope !== undefined && !isScreenScope(body.screenScope)) || (body.screenId !== undefined && (typeof body.screenId !== 'string' || !uuid.test(body.screenId))) || (body.deviceVersion !== undefined && !['mobile', 'tablet', 'desktop'].includes(String(body.deviceVersion))) || ((body.screenScope !== undefined || body.deviceVersion !== undefined) && body.screenId === undefined) || body.targetLayerId!==undefined&&(typeof body.targetLayerId!=='string'||!/^[a-z0-9-]{1,80}$/i.test(body.targetLayerId)) || !anchors.includes(String(body.anchor)) || (body.mentionedRole !== null && body.mentionedRole !== undefined && !agentRoles.includes(body.mentionedRole as typeof agentRoles[number])) || (body.versionId && (typeof body.versionId !== 'string' || !uuid.test(body.versionId)))) return json({ error: 'Invalid comment.' }, 400);
  const project = await projectFor(client, body.projectId);
  if (!project) return json({ error: 'Project not found.' }, 404);
  if (body.versionId) {
   const { data: version } = await client.from('studio_versions').select('id').eq('id', body.versionId).eq('project_id', project.id).eq('workspace_id', project.workspace_id).single();
   if (!version) return json({ error: 'Version not found.' }, 404);
  }
+ // A screen-scoped request must name a screen of this project (RLS-checked); none means "add a new screen".
+ if (typeof body.screenId === 'string') {
+  const { data: screen } = await client.from('studio_screens').select('id').eq('id', body.screenId).eq('project_id', project.id).maybeSingle();
+  if (!screen) return json({ error: 'That screen is no longer on the board.' }, 404);
+ }
+ const markers = typeof body.screenId === 'string'
+  ? encodeScreenTarget(body.screenId) + (isScreenScope(body.screenScope) ? encodeScreenScope(body.screenScope) : body.deviceVersion ? encodeDeviceVersion(body.deviceVersion as 'mobile') : '')
+  : typeof body.targetLayerId === 'string' ? encodeLayerReference(body.targetLayerId) : '';
  const { data, error } = await adminClient().rpc('enqueue_studio_task', {
   p_project: project.id, p_actor: user.id, p_request: body.requestId,
-  p_text: `${body.text.trim().slice(0,2000-(body.targetLayerId?encodeLayerReference(body.targetLayerId).length+1:0))}${body.targetLayerId?`\n${encodeLayerReference(body.targetLayerId)}`:''}`, p_role: body.mentionedRole || 'creative_director', p_version: body.versionId || null, p_display: body.displayMessage,
+  p_text: withMarker(body.text.trim(), markers), p_role: body.mentionedRole || 'creative_director', p_version: body.versionId || null, p_display: body.displayMessage,
  });
  if (error || !data) {
   if(error) console.error('Studio task enqueue failed:',error.code,error.message);

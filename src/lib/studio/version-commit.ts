@@ -6,7 +6,7 @@ import { isKnownIcon } from './icon-library';
 export const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const revision = (value: unknown): value is string | null => value === null || (typeof value === 'string' && uuid.test(value));
 export const privateJson = (body: object, status = 200) => Response.json(body, { status, headers: { 'Cache-Control': 'private, no-store' } });
-export async function readCommitBody(request: Request): Promise<Record<string, unknown>> {
+export async function readCommitBody(request: Request, maxBytes = 262144): Promise<Record<string, unknown>> {
  const reader = request.body?.getReader();
  if (!reader) throw new Error('Missing request body.');
  const chunks: Uint8Array[] = []; let size = 0;
@@ -14,7 +14,7 @@ export async function readCommitBody(request: Request): Promise<Record<string, u
   const { value, done } = await reader.read();
   if (done) break;
   size += value.byteLength;
-  if (size > 262144) { await reader.cancel(); throw new Error('Request exceeds 256 KB.'); }
+  if (size > maxBytes) { await reader.cancel(); throw new Error(`Request exceeds ${Math.round(maxBytes / 1024)} KB.`); }
   chunks.push(value);
  }
  const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));

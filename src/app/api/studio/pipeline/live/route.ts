@@ -1,6 +1,8 @@
 import { studioUser } from '@/lib/studio/supabase';
 import { pipelineRoles } from '@/lib/studio/agents/pipeline';
 import { isCanvas } from '@/lib/studio/canvas';
+import { isHtmlScreen } from '@/lib/studio/html-screen';
+import { isSectionState } from '@/lib/studio/agents/section-pipeline';
 import { adminClient, authConfig, sessionClient } from '@/lib/studio/supabase';
 import { privateJson as json, uuid } from '@/lib/studio/version-commit';
 
@@ -36,21 +38,27 @@ export async function GET(request: Request) {
   return json({ error: 'The live canvas preview is temporarily unavailable.' }, 503);
  }
  const row = rows?.[0];
- const state = row?.state as { document?: unknown; stage?: number; targetScreenId?: string; focusNodeIds?: unknown } | undefined;
- if (!row || !state || !Number.isInteger(state.stage) || state.stage! < 0 || state.stage! > 4) return json({ preview: null });
- const document = state.document;
- if (!isCanvas(document)) return json({ preview: null });
- const taskStatus = tasks?.find(task => task.id === row.task_id)?.status;
- if (taskStatus !== 'queued' && taskStatus !== 'running') return json({ preview: null });
+ const taskStatus = tasks?.find(task => task.id === row?.task_id)?.status;
+ if (!row || (taskStatus !== 'queued' && taskStatus !== 'running')) return json({ preview: null });
  const since = new URL(request.url).searchParams.get('since');
  const sinceStatus = new URL(request.url).searchParams.get('sinceStatus');
  if (since === row.updated_at && sinceStatus === taskStatus) return json({ unchanged: true });
+ if (isSectionState(row.state)) {
+  // Before the plan exists there is nothing to draw yet.
+  if (!isHtmlScreen(row.state.document)) return json({ preview: null });
+  // screenId: the board screen being redrawn; null with a position for a screen being created.
+  return json({ preview: { kind: 'html-screen', taskId: row.task_id, updatedAt: row.updated_at, status: taskStatus, document: row.state.document, phase: row.state.phase, role: row.state.phase === 'plan' ? 'creative_director' : 'ui_designer', screenId: row.state.screenId ?? null, position: row.state.position ?? null } });
+ }
+ const state = row.state as { document?: unknown; stage?: number; targetScreenId?: string; focusNodeIds?: unknown } | undefined;
+ if (!state || !Number.isInteger(state.stage) || state.stage! < 0 || state.stage! > 4) return json({ preview: null });
+ const document = state.document;
+ if (!isCanvas(document)) return json({ preview: null });
  const role = pipelineRoles[state.stage!];
  const nodeIds = Array.isArray(state.focusNodeIds)
   ? state.focusNodeIds.filter((id): id is string => typeof id === 'string' && document.nodes.some(node => node.id === id)).slice(0, 3)
   : [];
  return json({ preview: {
-  taskId: row.task_id, updatedAt: row.updated_at, status: taskStatus, document, targetScreenId: state.targetScreenId,
+  kind: 'canvas', taskId: row.task_id, updatedAt: row.updated_at, status: taskStatus, document, targetScreenId: state.targetScreenId,
   stage: state.stage! + 1, role, nodeIds: nodeIds.length ? nodeIds : [state.targetScreenId].filter((id): id is string => typeof id === 'string' && document.nodes.some(node => node.id === id)),
  } });
 }
