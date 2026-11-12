@@ -24,7 +24,9 @@ test('screen validation rejects multi-root generation, cross-screen edits, repar
  const valid=validateProposal(edit([node('home-title','text','home',{text:'Discover lunch'})]),document,[],'home');
  assert.deepEqual(valid.document.nodes.filter(item=>item.id.startsWith('checkout')),original.nodes.filter(item=>item.id.startsWith('checkout')));
  assert.deepEqual(document,original);
- assert.throws(()=>validateProposal(edit([node('nested','container','home',{screenPreset:'mobile'})]),document,[],'home'),/never nest screens/);
+ // screenPreset is not part of the agent contract: a stray value is dropped and only parentId null creates a screen.
+ const nested=validateProposal(edit([node('nested','container','home',{screenPreset:'mobile'})]),document,[],'home').document.nodes.find(item=>item.id==='nested');
+ assert.equal(nested?.screen,undefined);
 });
 
 test('pipeline, specialist and QA keep one target even with other screens present',async()=>{
