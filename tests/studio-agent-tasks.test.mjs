@@ -1,8 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
-import { PGlite } from '@electric-sql/pglite';
+import { adapter, studioDatabase } from './fixtures/studio-db.mjs';
 import { blankCanvas } from '../src/lib/studio/canvas.ts';
 import { validateProposal, proposeCanvasWork, ProviderFailure } from '../src/lib/studio/agents/proposal.ts';
 import { runNextTask } from '../src/lib/studio/agents/worker.ts';
@@ -123,29 +122,20 @@ test('content filtering and missing usage are not mislabeled as output truncatio
  await assert.rejects(proposeCanvasWork(input,async()=>Response.json({status:'completed',output:[]})),/valid token usage/);
 });
 
-// A narrow Supabase-shaped adapter executes actual SQL for worker integration.
-function adapter(db){
- return {
-  async rpc(name,args){try{const keys=Object.keys(args);const result=await db.query(`select ${name}(${keys.map((key,i)=>`${key}=>$${i+1}`).join(',')}) as data`,keys.map(key=>typeof args[key]==='object'&&args[key]!==null?JSON.stringify(args[key]):args[key]));return {data:result.rows[0].data,error:null};}catch(error){return {data:null,error};}},
-  from(table){let fields='*',conditions=[],values=[],orders=[],count,one=false;
-   const query={select(v){fields=v;return query;},insert(row){const keys=Object.keys(row);return db.query(`insert into ${table} (${keys.join(',')}) values (${keys.map((_,i)=>`$${i+1}`).join(',')})`,keys.map(key=>row[key])).then(()=>({data:null,error:null}),error=>({data:null,error}));},eq(k,v){values.push(v);conditions.push(`${k}=$${values.length}`);return query;},lte(k,v){values.push(v);conditions.push(`${k}<=$${values.length}`);return query;},order(k,{ascending=true}={}){orders.push(`${k} ${ascending?'asc':'desc'}`);return query;},limit(v){count=v;return query;},single(){one=true;return query;},maybeSingle(){one=true;return query;},async then(resolve,reject){try{const result=await db.query(`select ${fields} from ${table}${conditions.length?' where '+conditions.join(' and '):''}${orders.length?' order by '+orders.join(','):''}${count?' limit '+count:''}`,values);return resolve({data:one?result.rows[0]||null:result.rows,error:null});}catch(error){return resolve({data:null,error});}}};return query;
-  },
- };
-}
-
 test('sequential pipeline checkpoints privately, fences publication, resumes credits and publishes once after QA',async()=>{
- const db=new PGlite();const alice=randomUUID(),bob=randomUUID();const secret='c'.repeat(64);const priorSecret=process.env.STUDIO_VAULT_KEY;process.env.STUDIO_VAULT_KEY=secret;
+ const db=await studioDatabase();const alice=randomUUID(),bob=randomUUID();const secret='c'.repeat(64);const priorSecret=process.env.STUDIO_VAULT_KEY;process.env.STUDIO_VAULT_KEY=secret;
  try{
-  await db.exec("CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role BYPASSRLS; CREATE SCHEMA auth; CREATE TABLE auth.users(id uuid primary key); CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$; GRANT USAGE ON SCHEMA public,auth TO authenticated,service_role,anon; GRANT EXECUTE ON FUNCTION auth.uid() TO authenticated;");
-  for(const file of ['202610110001_studio.sql','202610140001_studio_agent_notes.sql','202610140002_studio_agent_messages.sql','202610160002_studio_canvas_commits.sql','202610160003_studio_agent_tasks.sql','202610160004_studio_task_activity.sql','202610160005_studio_openrouter.sql','202610160006_studio_openrouter_free_default.sql','202610160007_studio_agent_subtasks.sql','202610160008_studio_agent_job_queue.sql','202610160009_studio_groq.sql','202611090002_studio_anthropic_keys.sql','202610160010_studio_generation_wait_reason.sql','202610180001_studio_small_actions.sql','202610180002_studio_component_actions.sql','202610190001_studio_agent_handoffs.sql','202610190002_studio_handoff_action_limits.sql','202610200001_studio_sequential_pipeline.sql','202610290001_separate_note_display.sql']){const sql=await readFile(new URL(`../supabase/migrations/${file}`,import.meta.url),'utf8');await db.exec(sql);}
   await db.query('insert into auth.users values($1),($2)',[alice,bob]);
   const wa=(await db.query('insert into studio_workspaces(owner_id) values($1) returning id',[alice])).rows[0].id;
   const wb=(await db.query('insert into studio_workspaces(owner_id) values($1) returning id',[bob])).rows[0].id;
   const project=(await db.query("insert into studio_projects(workspace_id,name,brief,cta_url) values($1,'Food','Build a food ordering application','https://example.com') returning id",[wa])).rows[0].id;
   await db.query('insert into studio_keys(workspace_id,ciphertext,suffix) values($1,$2,$3)',[wa,sealKey('test-only',wa,secret),'only']);
+  // The five-stage pipeline now serves only node canvases that already hold work.
+  const seeded=validateProposal({...proposal,upsert_nodes:[{...screen,layoutMode:'VERTICAL'}]},blankCanvas(),[],'screen',true).document;
+  const base=(await db.query("insert into studio_versions(project_id,workspace_id,document,model,input_tokens,output_tokens) values($1,$2,$3,'manual-edit',0,0) returning id",[project,wa,seeded])).rows[0].id;
   await db.exec('SET ROLE service_role');const client=adapter(db);
   const rpc=async(name,args)=>{const result=await client.rpc(name,args);if(result.error)throw result.error;return result.data;};
-  const enqueue=(request=randomUUID(),actor=alice)=>rpc('enqueue_studio_task',{p_project:project,p_actor:actor,p_request:request,p_text:'@Mira build a food app',p_role:'ui_designer',p_version:null});
+  const enqueue=(request=randomUUID(),actor=alice)=>rpc('enqueue_studio_task',{p_project:project,p_actor:actor,p_request:request,p_text:'@Mira build a food app',p_role:'ui_designer',p_version:base});
   const displayRequest=randomUUID();
   const displayArgs={p_project:project,p_actor:alice,p_request:displayRequest,p_text:'Revise the completed work for: original\nRequested changes:  Make it blue  ',p_role:'ui_designer',p_version:null,p_display:'  Make it blue  '};
   const separated=await rpc('enqueue_studio_task',displayArgs);
@@ -167,7 +157,7 @@ test('sequential pipeline checkpoints privately, fences publication, resumes cre
   const work=()=>runNextTask(client,propose,undefined,audit);
   for(let stage=0;stage<4;stage++){
    await work();
-   assert.equal((await db.query('select count(*)::int n from studio_versions')).rows[0].n,0);
+   assert.equal((await db.query('select count(*)::int n from studio_versions')).rows[0].n,1);
    assert.equal((await db.query('select state from studio_pipeline_drafts where task_id=$1',[first.task.id])).rows[0].state.stage,stage+1);
   }
   // A second prompt must not interleave with a private draft between checkpoints.
@@ -175,7 +165,7 @@ test('sequential pipeline checkpoints privately, fences publication, resumes cre
   await work();
   let state=(await db.query('select state from studio_pipeline_drafts where task_id=$1',[first.task.id])).rows[0].state;
   assert.equal(state.stage,2);assert.equal(state.issues.length,23);assert.equal(state.round,1);
-  assert.equal((await db.query('select count(*)::int n from studio_versions')).rows[0].n,0);
+  assert.equal((await db.query('select count(*)::int n from studio_versions')).rows[0].n,1);
   // Credits can run out mid-turn. No stage is lost, and reset resumes automatically.
   await db.query('update studio_generation_limits set attempts=30,lease_until=now() where workspace_id=$1',[wa]);
   await work();assert.equal((await db.query('select state from studio_pipeline_drafts where task_id=$1',[first.task.id])).rows[0].state.stage,2);
@@ -190,7 +180,7 @@ test('sequential pipeline checkpoints privately, fences publication, resumes cre
   await db.query('update studio_tasks set available_at=now() where id=$1',[first.task.id]);
   await work();await work();await work();
   assert.deepEqual(roles,['ux_architect','creative_director','ui_designer','copywriter','ui_designer','copywriter']);
-  assert.equal((await db.query('select count(*)::int n from studio_versions')).rows[0].n,1);
+  assert.equal((await db.query('select count(*)::int n from studio_versions')).rows[0].n,2);
   const completed=(await db.query('select * from studio_tasks where id=$1',[first.task.id])).rows[0];
   assert.equal(completed.status,'review');assert.ok(completed.result_version_id);
   assert.equal((await db.query('select status from studio_tasks where id=$1',[second.id])).rows[0].status,'queued');
@@ -201,7 +191,7 @@ test('sequential pipeline checkpoints privately, fences publication, resumes cre
   const privateState=(await db.query('select state from studio_pipeline_drafts where task_id=$1',[second.id])).rows[0].state;
   await rpc('control_studio_task',{p_task:second.id,p_actor:alice,p_action:'cancel'});
   assert.equal((await rpc('checkpoint_studio_pipeline',{p_task:second.id,p_token:cancelledToken,p_previous:privateState,p_next:{...privateState,stage:2},p_summary:'late result',p_model:'test',p_input:0,p_output:0})).status,'stale');
-  assert.equal((await db.query('select count(*)::int n from studio_versions')).rows[0].n,1);
+  assert.equal((await db.query('select count(*)::int n from studio_versions')).rows[0].n,2);
   await rpc('control_studio_task',{p_task:second.id,p_actor:alice,p_action:'retry'});
   assert.equal((await db.query('select count(*)::int n from studio_pipeline_drafts where task_id=$1',[second.id])).rows[0].n,0);
   await db.exec('RESET ROLE');await db.query("SELECT set_config('request.jwt.claim.sub',$1,false)",[alice]);await db.exec('SET ROLE authenticated');

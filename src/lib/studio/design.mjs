@@ -1,16 +1,3 @@
-const text = { type: 'string' };
-export const designSchema = {
- type: 'object', additionalProperties: false,
- properties: {
-  brand: text, eyebrow: text, headline: text, description: text, cta: text,
-  style: { type: 'string', enum: ['editorial', 'bold', 'minimal'] },
-  palette: { type: 'string', enum: ['ocean', 'moss', 'clay', 'midnight'] },
-  sectionOrder: { type: 'array', minItems: 3, maxItems: 3, enum: [['hero', 'features', 'closing']], items: { type: 'string', enum: ['hero', 'features', 'closing'] } },
-  features: { type: 'array', minItems: 3, maxItems: 6, items: { type: 'object', additionalProperties: false, properties: { title: text, description: text }, required: ['title', 'description'] } },
-  closingTitle: text, closingDescription: text, designNotes: text,
- },
- required: ['brand', 'eyebrow', 'headline', 'description', 'cta', 'style', 'palette', 'features', 'closingTitle', 'closingDescription', 'designNotes', 'sectionOrder'],
-};
 export function validateDesign(value) {
  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('The design was incomplete. Please try again.');
  for (const key of ['brand', 'eyebrow', 'headline', 'description', 'cta', 'closingTitle', 'closingDescription', 'designNotes']) {

@@ -16,7 +16,7 @@ export type PipelineState = {
  document:CanvasDocument;commands:CanvasCommand[];issues:PipelineIssue[];focusNodeIds?:string[];newScreenTransition?:boolean; executionMode?:'SURGICAL_REVISION'|'CREATE_NEW_SCREEN'|'EDIT_SCREEN'; revisionScope?:RevisionScope; targetLayerId?:string;
 };
 export const stageInstructions = [
- 'Create ONLY the active mobile screen root and nested structural containers/grid. If active_screen_id is not already in current_canvas, create a new root with that exact ID and preserve every existing root frame unchanged as an archived screen. Never recycle or modify an old screen root to create the requested screen. Set the root width to 375px using screenPreset mobile. Root height may HUG or use flexible sizing with an 812px minimum. Do not create text, images, icons or controls. Preserve existing content. Leave theme styling for the next stage.',
+ 'Create ONLY the active mobile screen root and nested structural containers/grid. If active_screen_id is not already in current_canvas, create a new root with that exact ID and preserve every existing root frame unchanged as an archived screen. Never recycle or modify an old screen root to create the requested screen. Set the root width to 375px (mobile). Root height may HUG or use flexible sizing with an 812px minimum. Do not create text, images, icons or controls. Preserve existing content. Leave theme styling for the next stage.',
  'Style existing structural containers with theme colors, background fills, borders and surface radii. Do not create/delete nodes, change layout, or write text.',
  'Populate the structure with functional components, verified Unsplash assets and valid Lucide icons in atomic flex rows. Preserve the root screen. Supply provisional meaningful labels; the next stage refines copy.',
  'Refine text on existing text, button and input nodes only. Do not create/delete nodes or alter styling, layout, images or icons.',
@@ -78,6 +78,47 @@ export function alignStageCommands(base:CanvasDocument,commands:CanvasCommand[],
   return Object.keys(patch).length?[{type:'update',id:command.id,patch}]:[];
  });
 }
+/** Existing node IDs a stage may edit; null means the stage may create structure or components. */
+export function stageEditableIds(state:PipelineState):string[]|null {
+ const nodes=screenDocument(state.document,state.targetScreenId).nodes;
+ if(state.stage===1)return nodes.filter(node=>node.type==='container').map(node=>node.id);
+ if(state.stage===3)return nodes.filter(node=>['text','button','input'].includes(node.type)).map(node=>node.id);
+ return null;
+}
+const stageNodeTypes:Partial<Record<number,string[]>>={0:['container'],1:['container'],3:['text','button','input']};
+/**
+ * Encodes stage permissions in the structured-output schema itself, so a constrained provider
+ * cannot emit a node type or ID outside the stage's remit (e.g. Direction restyling a chip).
+ */
+export function stageProposalSchema<T extends {properties:Record<string,any>}>(state:PipelineState,base:T):T {
+ const schema=structuredClone(base);
+ const item=schema.properties.upsert_nodes?.items;
+ if(!item?.properties)return schema;
+ const types=stageNodeTypes[state.stage];
+ if(types)item.properties.type={type:'string',enum:types};
+ const ids=stageEditableIds(state);
+ if(ids?.length)item.properties.id={type:'string',enum:ids};
+ return schema;
+}
+/**
+ * Providers without constrained decoding can still return out-of-remit operations. Drop them
+ * before validation (stages 1 and 3 never create or delete; stage 0 only builds containers)
+ * instead of failing the whole run; validateStageEdit still guards the result.
+ */
+export function scopeStageProposal(state:PipelineState,proposal:Record<string,unknown>):{proposal:Record<string,unknown>;dropped:string[]} {
+ if(!Array.isArray(proposal.upsert_nodes))return {proposal,dropped:[]};
+ const ids=stageEditableIds(state),allowedIds=ids&&new Set(ids),types=stageNodeTypes[state.stage];
+ const dropped:string[]=[];
+ const upsert_nodes=proposal.upsert_nodes.filter((node:any)=>{
+  const keep=(!allowedIds||allowedIds.has(node?.id))&&(!types||types.includes(node?.type));
+  if(!keep)dropped.push(String(node?.id));
+  return keep;
+ });
+ const deletes=Array.isArray(proposal.delete_ids)?proposal.delete_ids:[];
+ const delete_ids=state.stage===1||state.stage===3?[]:deletes;
+ if(delete_ids!==deletes)dropped.push(...deletes.map(id=>`delete:${String(id)}`));
+ return {proposal:{...proposal,upsert_nodes,delete_ids},dropped};
+}
 export function validateStageEdit(state:PipelineState,after:CanvasDocument) {
  if(state.revisionScope)assertRevisionScope(state.revisionScope,after);
  const before=new Map(state.document.nodes.map(node=>[node.id,node]));
@@ -116,12 +157,15 @@ export function pipelineIssues(state:PipelineState):PipelineIssue[] {
  const relevant=state.revisionScope?issues.filter(issue=>scoped.nodes.some(node=>node.id!==state.targetScreenId&&inSubtree(scoped,node.id,state.revisionScope!.sectionId)&&issue.key.split(':').includes(node.id))):issues;
  return relevant.map(issue=>{const node=scoped.nodes.find(node=>issue.key.split(':').includes(node.id));return {agent_role:issue.key==='single-screen'||issue.key.startsWith('mobile-screen:')||node?.type==='container'&&!issue.key.startsWith('screen-content:')&&!issue.key.startsWith('menu-')?'ux_architect':'ui_designer',message:issue.message};});
 }
+/** Actions one stage may take; matches checkpoint_studio_pipeline, which accepts action 0-7. */
+export const MAX_STAGE_ACTIONS=8;
 export function advanceDraft(state:PipelineState,result:{document:CanvasDocument;commands:CanvasCommand[];stageComplete?:boolean}):PipelineState {
  validateStageEdit(state,result.document);
- if(!result.stageComplete&&state.action>=14)throw new PipelineGateError('This stage exceeded fifteen actions. The private draft was not published.');
+ // A stage that keeps polishing hands off at the cap instead of failing the run; QA reports anything left.
+ const complete=!!result.stageComplete||state.action>=MAX_STAGE_ACTIONS-1;
  const document=sanitizeVisualHierarchy(result.document,state.targetScreenId,state.revisionScope);
  if(state.revisionScope)assertRevisionScope(state.revisionScope,document);
- return {...state,document,commands:[...state.commands,...result.commands],stage:state.stage+(result.stageComplete?1:0),action:result.stageComplete?0:state.action+1};
+ return {...state,document,commands:[...state.commands,...result.commands],stage:state.stage+(complete?1:0),action:complete?0:state.action+1};
 }
 export function rejectOrApprove(state:PipelineState,reported:PipelineIssue[]):PipelineState {
  if(state.stage!==4)throw new Error('Only the final QA stage can approve a turn.');

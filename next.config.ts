@@ -1,7 +1,8 @@
 import type { NextConfig } from 'next';
 const config: NextConfig = {
   agentRules: false,
-  serverExternalPackages: ['node:sqlite'],
+  // HTML screens compile Tailwind at request time from its stylesheet.
+  outputFileTracingIncludes: { '/api/studio/screen': ['./node_modules/tailwindcss/index.css'] },
   // Artwork is served as pre-sized static assets; keep the unused optimizer closed.
   images: { unoptimized: true },
   async headers() {

@@ -1,7 +1,7 @@
 'use client';
 
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Avatar, Box, Button, Chip, Skeleton, IconButton, Paper, Stack, TextField, Typography } from '@mui/material';
+import { Alert, Avatar, Box, Button, Chip, Skeleton, IconButton, Paper, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
 import { AccountContext } from './account-menu';
 import { conversationSegments } from '@/lib/studio/conversation-highlights';
 import { dropdownSurfaceSx } from './dropdown-surface';
@@ -14,6 +14,14 @@ import { AgentMark } from './agent-identity';
 import { ConversationSkeleton } from './loading-states';
 import Link from 'next/link';
 import type { TrialStatus } from '@/lib/studio/trial';
+import type { SelectionPreview } from './html-screen-frame';
+import { isScreenScope, parseScreenScope, parseScreenTarget, stripScreenScope } from '@/lib/studio/html-screen';
+import { SelectionThumbnail } from './selection-preview';
+
+/** An element picked on an HTML screen; the composer offers Section edit, Add section or Global edit for it. */
+/** A selected screen, or an element in it (sectionId set): whole screens are edited globally, elements by section. */
+export type ScreenTarget = { screenId: string; screenName: string; sectionId?: string; path?: string; label: string; preview?: SelectionPreview };
+export type ScopeMode = 'section' | 'add' | 'global';
 
 export type GuildNote = { id: string; version_id: string | null; author_role: AgentRole | 'human'; mentioned_role: AgentRole | null; anchor: AgentAnchor; body: string; displayContent?: string; created_at: string };
 const names: Record<AgentRole | 'human', string> = { human: 'You', ...Object.fromEntries(agentRoles.map(role => [role, agentIdentity[role].persona])) } as Record<AgentRole | 'human', string>;
@@ -31,19 +39,25 @@ async function conversationData(response:Response) {
  catch{throw new Error('The project conversation returned an invalid response. Please retry.');}
 }
 
-export function GuildPanel({ projectId, versionId, layers: layerOptions = [], addedNotes = [], initialMention = null, onInitialMentionUsed, selectedContext = null, trial = null }: { trial?: TrialStatus | null; projectId: string; versionId: string | null; layers?: { id: string; name: string }[]; addedNotes?: GuildNote[]; initialMention?: AgentRole | null; onInitialMentionUsed?: () => void; selectedContext?: { id: string; name: string } | null }) {
+export function GuildPanel({ projectId, versionId, layers: layerOptions = [], initialMention = null, onInitialMentionUsed, selectedContext = null, screenTarget = null, onClearScreenTarget, scopeRequest = null, trial = null }: { screenTarget?: ScreenTarget | null; onClearScreenTarget?: () => void; scopeRequest?: { mode: ScopeMode; at: number } | null; trial?: TrialStatus | null; projectId: string; versionId: string | null; layers?: { id: string; name: string }[]; initialMention?: AgentRole | null; onInitialMentionUsed?: () => void; selectedContext?: { id: string; name: string } | null }) {
  const { avatarUrl } = useContext(AccountContext);
  const [conversationLoaded, setConversationLoaded] = useState(false);
- const [notes, setNotes] = useState<GuildNote[]>(addedNotes);
+ const [notes, setNotes] = useState<GuildNote[]>([]);
  const [text, setText] = useState('');
  const [workingAgents, setWorkingAgents] = useState<AgentRole[]>([]);
  const [activeTaskIds, setActiveTaskIds] = useState<string[]>([]);
  const [stoppedTask, setStoppedTask] = useState<StoppedTask|null>(null);
  const [stopping, setStopping] = useState(false);
  const [taskWaits, setTaskWaits] = useState<WaitingMessage[]>([]);
- const [reviewFeedback, setReviewFeedback] = useState<ReviewFeedback|null>(null);
+ // Request changes keeps the reviewed work's target (screen, and section if it was a section edit).
+ const [reviewFeedback, setReviewFeedback] = useState<(ReviewFeedback & { screenId: string | null; screenScope: ReturnType<typeof parseScreenScope> })|null>(null);
  const [composerContext, setComposerContext] = useState(selectedContext);
  const [targetLayerId, setTargetLayerId] = useState<string|null>(selectedContext?.id||null);
+ const [scopeMode, setScopeMode] = useState<ScopeMode>('section');
+ const [previewOpen, setPreviewOpen] = useState(false);
+ // The screen toolbar's Global/Section edit and Add section pick the mode and focus the composer.
+ useEffect(() => { if (!scopeRequest) return; setScopeMode(scopeRequest.mode); requestAnimationFrame(() => inputRef.current?.focus()); }, [scopeRequest]);
+ useLayoutEffect(() => { setScopeMode(screenTarget?.sectionId ? 'section' : 'global'); }, [screenTarget?.screenId, screenTarget?.sectionId, screenTarget?.path]);
  const [error, setError] = useState('');
  const [saving, setSaving] = useState(false);
  const pendingMessage = useRef<{payload:string;requestId:string}|null>(null);
@@ -80,7 +94,6 @@ export function GuildPanel({ projectId, versionId, layers: layerOptions = [], ad
   const interval = window.setInterval(() => void load(), 2500);
   return () => { cancelled = true; window.clearInterval(interval); };
  }, [projectId]);
- useEffect(() => { if (addedNotes.length) setNotes(items => [...items.filter(item => !addedNotes.some(added => added.id === item.id)), ...addedNotes].sort((a,b) => a.created_at.localeCompare(b.created_at))); }, [addedNotes]);
  useEffect(() => { if (feedRef.current) feedRef.current.scrollTop = feedRef.current.scrollHeight; }, [notes.length]);
  useEffect(() => { setActiveSuggestionIndex(0); }, [mentionQuery, layerQuery]);
  useEffect(() => { activeOptionRef.current?.scrollIntoView({ block: 'nearest' }); }, [activeSuggestionIndex]);
@@ -102,7 +115,7 @@ export function GuildPanel({ projectId, versionId, layers: layerOptions = [], ad
  }, []);
 
  function requestChanges(feedback: ReviewFeedback) {
-  setReviewFeedback(feedback); setComposerContext(null); setTargetLayerId(feedback.instruction.match(/\u2063guildos-layer:([a-z0-9-]{1,80})\u2063/i)?.[1]||null); setText('');
+  setReviewFeedback({ ...feedback, instruction: stripScreenScope(feedback.instruction).trim(), screenId: parseScreenTarget(feedback.instruction), screenScope: parseScreenScope(feedback.instruction) }); setComposerContext(null); setTargetLayerId(feedback.instruction.match(/\u2063guildos-layer:([a-z0-9-]{1,80})\u2063/i)?.[1]||null); setText('');
   requestAnimationFrame(() => inputRef.current?.focus());
  }
  function resolveLayerMention(value:string) {
@@ -140,14 +153,23 @@ export function GuildPanel({ projectId, versionId, layers: layerOptions = [], ad
  async function submit() {
   const draftMessage = text;
   if (!draftMessage.trim() || saving || sending.current) return;
+  // A selection is sent as a visible reference too (#section, or #Screen-name for the whole screen), so the message says what it was about.
+  const targetReference = screenTarget ? `#${screenTarget.sectionId && scopeMode !== 'global' ? screenTarget.sectionId : screenTarget.screenName.trim().replace(/\s+/g, '-')}` : '';
+  const shownMessage = targetReference && !draftMessage.trimStart().startsWith(targetReference) ? `${targetReference} ${draftMessage.trimStart()}` : draftMessage;
   const contextPrefix = reviewFeedback ? `Revise the completed work for: ${reviewFeedback.instruction.slice(0,500)}\nRequested changes: ` : composerContext ? `#${composerContext.name} ` : '';
-  const message = `${contextPrefix}${draftMessage}`.slice(0, 2000);
+  const message = `${contextPrefix}${shownMessage}`.slice(0, 2000);
   const layerMentions=layerOptions.flatMap(layer=>[layer.name,layer.name.replace(/\s+/g,'_'),layer.id].map(label=>({id:layer.id,label}))).sort((a,b)=>b.label.length-a.label.length);
   const explicitLayer=layerMentions.flatMap(layer=>{const index=message.lastIndexOf(`#${layer.label}`),end=message[index+layer.label.length+1]||'';return index>=0&&!/[\p{L}\p{N}_-]/u.test(end)?[{id:layer.id,index}]:[];}).sort((a,b)=>b.index-a.index)[0]?.id;
   const mention = agentRoles.find(role => new RegExp(`@${agentIdentity[role].persona}\\b`, 'i').test(message)) || null;
   sending.current = true; setSaving(true); setError('');
   try {
-   const payload = JSON.stringify({ projectId, versionId: reviewFeedback?.versionId || versionId, anchor: 'page', mentionedRole: mention, targetLayerId:targetLayerId||explicitLayer, text: message, displayMessage: draftMessage });
+   const selectedScope = screenTarget?.sectionId && scopeMode !== 'global' ? { mode: scopeMode, sectionId: screenTarget.sectionId, ...(scopeMode === 'section' && screenTarget.path ? { path: screenTarget.path } : {}) } : undefined;
+   // A selection on the board wins; otherwise a revision goes back to the screen (and section) it reviewed.
+   const screenId = screenTarget?.screenId ?? reviewFeedback?.screenId ?? undefined;
+   const reviewScope = reviewFeedback?.screenScope;
+   // Revising an added section re-plans the screen rather than adding another one.
+   const screenScope = screenTarget ? selectedScope : isScreenScope(reviewScope) && reviewScope.mode === 'section' ? reviewScope : undefined;
+   const payload = JSON.stringify({ projectId, versionId: reviewFeedback?.versionId || versionId, anchor: 'page', mentionedRole: mention, targetLayerId:screenId?undefined:targetLayerId||explicitLayer, screenId, screenScope, text: message, displayMessage: shownMessage.slice(0, 2000) });
    if (pendingMessage.current?.payload !== payload) pendingMessage.current = {payload,requestId:crypto.randomUUID()};
    const response = await fetch('/api/studio/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({...JSON.parse(payload),requestId:pendingMessage.current.requestId}) });
    const data = await conversationData(response);
@@ -155,6 +177,8 @@ export function GuildPanel({ projectId, versionId, layers: layerOptions = [], ad
    pendingMessage.current = null;
    setNotes(items => [...items.filter(item => item.id !== data.note.id), data.note]); setText(''); setReviewFeedback(null); setMentionQuery(null); setLayerQuery(null);
    window.dispatchEvent(new Event('guildos:tasks-updated'));
+   // The request carries its own scope, so the selection is done once it is sent.
+   if (screenTarget) onClearScreenTarget?.();
   } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not send this message.'); }
   finally { sending.current = false; setSaving(false); }
  }
@@ -215,6 +239,23 @@ export function GuildPanel({ projectId, versionId, layers: layerOptions = [], ad
     <Box sx={{ minWidth: 0, position: 'relative', px: 1, py: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
      {(suggestions.length > 0 || layerSuggestions.length > 0) && <Paper role="listbox" aria-label={mentionQuery !== null ? 'Mention an agent' : 'Mention a layer'} sx={{ ...dropdownSurfaceSx, position: 'absolute', zIndex: 4, bottom: 'calc(100% + 12px)', left: 0, right: 0, boxSizing: 'border-box', maxHeight: 260, overflowX: 'hidden', overflowY: 'auto', p: .5 }}>{suggestions.map((role, index) => <Button key={role} ref={index === activeSuggestionIndex ? activeOptionRef : undefined} role="option" aria-selected={index === activeSuggestionIndex} onClick={() => insertMention(role)} fullWidth sx={{ minWidth: 0, justifyContent: 'flex-start', textTransform: 'none', color: 'text.primary', px: 1, py: .75, textAlign: 'left', bgcolor: index === activeSuggestionIndex ? '#f0f4f1' : 'transparent', '&:hover': { bgcolor: '#f0f4f1' } }}><Box sx={{ flex: 'none', lineHeight: 0 }}><AgentMark role={role} size={30}/></Box><Box sx={{ ml: 1, minWidth: 0, textAlign: 'left' }}><Typography variant="body2" noWrap sx={{ fontWeight: 700, lineHeight: 1.2 }}>{agentIdentity[role].persona}</Typography><Typography variant="caption" noWrap color="text.secondary">{agentIdentity[role].name}</Typography></Box></Button>)}{layerSuggestions.map((item, index) => <Button key={item.id} ref={index === activeSuggestionIndex ? activeOptionRef : undefined} role="option" aria-selected={index === activeSuggestionIndex} onClick={() => insertLayer(item.id,item.name)} fullWidth sx={{ minWidth: 0, justifyContent: 'flex-start', textTransform: 'none', color: 'text.primary', px: 1, py: .75, textAlign: 'left', bgcolor: index === activeSuggestionIndex ? '#f0f4f1' : 'transparent', '&:hover': { bgcolor: '#f0f4f1' } }}><Box sx={{ width: 30, height: 30, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: 1, bgcolor: '#eef3ef', color: 'primary.main' }}><Hash size={16}/></Box><Box sx={{ ml: 1, minWidth: 0, textAlign: 'left' }}><Typography variant="body2" noWrap sx={{ fontWeight: 650, lineHeight: 1.2 }}>{item.name}</Typography><Typography variant="caption" noWrap color="text.secondary">Layer</Typography></Box></Button>)}</Paper>}
      {reviewFeedback && <Stack spacing={.5} sx={{minWidth:0}}><Chip size="small" label="Request changes" onDelete={()=>setReviewFeedback(null)} sx={{alignSelf:'flex-start'}}/><Typography variant="caption" color="text.secondary" sx={{overflowWrap:'anywhere'}}>What would you like changed?</Typography></Stack>}
+     {screenTarget && <Stack spacing={.75} sx={{ minWidth: 0 }}>
+      <Box sx={{ position: 'relative', alignSelf: 'flex-start', maxWidth: '100%' }} onMouseEnter={() => setPreviewOpen(true)} onMouseLeave={() => setPreviewOpen(false)}>
+       <Box data-testid="selection-context" sx={{ display: 'flex', alignItems: 'center', gap: 1, pl: .5, pr: 1.5, py: .5, border: '1.5px solid #1f2a33', borderRadius: '8px', bgcolor: '#eef2f8', maxWidth: '100%' }}>
+        {screenTarget.preview && <SelectionThumbnail preview={screenTarget.preview} width={34} maxHeight={30} title="Selection thumbnail"/>}
+        <Typography noWrap sx={{ fontSize: 13.5, fontWeight: 600, color: '#1f2a33' }}>{screenTarget.label}</Typography>
+       </Box>
+       {onClearScreenTarget && <IconButton size="small" aria-label="Remove selected context" onClick={onClearScreenTarget} sx={{ position: 'absolute', top: -9, right: -9, width: 20, height: 20, bgcolor: '#1f2a33', color: '#fff', '&:hover': { bgcolor: '#33414c' } }}><X size={12}/></IconButton>}
+       {previewOpen && screenTarget.preview && <Paper elevation={6} role="tooltip" aria-label="Selection preview" sx={{ position: 'absolute', zIndex: 6, bottom: 'calc(100% + 10px)', left: 0, width: 300, borderRadius: 2.5, overflow: 'hidden' }}>
+        <Typography noWrap sx={{ px: 1.75, py: 1.25, fontWeight: 650, fontSize: 14, borderBottom: '1px solid', borderColor: 'divider' }}>{screenTarget.label}</Typography>
+        <Box sx={{ p: 1.5, display: 'grid', placeItems: 'center', bgcolor: '#f6f7f6' }}><SelectionThumbnail preview={screenTarget.preview} width={272} maxHeight={200} title="Selection preview"/></Box>
+       </Paper>}
+      </Box>
+      {screenTarget.sectionId && <ToggleButtonGroup exclusive size="small" value={scopeMode} onChange={(_, value) => value && setScopeMode(value)} aria-label="Edit scope" sx={{ '& .MuiToggleButton-root': { textTransform: 'none', fontSize: 12, py: .35, px: 1 } }}>
+       <ToggleButton value="section">Section edit</ToggleButton><ToggleButton value="add">Add section</ToggleButton><ToggleButton value="global">Global edit</ToggleButton>
+      </ToggleButtonGroup>}
+      <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>{!screenTarget.sectionId || scopeMode === 'global' ? 'Re-plans this whole screen.' : scopeMode === 'section' ? `Changes only ${screenTarget.label}.` : `Adds a new section after ${screenTarget.sectionId}.`}</Typography>
+     </Stack>}
      {composerContext && <Chip size="small" icon={<Hash size={14}/>} label={composerContext.name} onDelete={() => setComposerContext(null)} deleteIcon={<X size={14}/>} sx={{ alignSelf: 'flex-start', height: 26, borderRadius: '6px', bgcolor: '#3b496b', color: '#9bc8f2', '& .MuiChip-icon': { color: 'inherit', ml: .75 }, '& .MuiChip-deleteIcon': { color: 'inherit', mr: .5, '&:hover': { color: '#fff' } } }}/>}
      <Box sx={{ minWidth: 0, position: 'relative' }}>
       <Box ref={textOverlayRef} aria-hidden="true" sx={{ position: 'absolute', zIndex: 1, inset: 0, overflow: 'hidden', whiteSpace: 'pre-wrap', overflowWrap: 'break-word', wordBreak: 'break-word', pointerEvents: 'none', color: 'text.primary' }}>{highlightedMessage}</Box>

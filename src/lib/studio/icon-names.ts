@@ -6,4 +6,3 @@ export function normalizeIconName(value: unknown): string | undefined {
  const key=value.trim().replace(/[-_ ]/g,'').toLowerCase();
  return canonical.get(key) || (key==='sliders'?'SlidersHorizontal':undefined);
 }
-export const validIconName = (value:unknown) => normalizeIconName(value)!==undefined;

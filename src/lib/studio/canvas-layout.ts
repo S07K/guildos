@@ -9,7 +9,8 @@ export type AutoLayout = { direction:'row'|'column'; gap:number; padding:number;
 export const defaultLayout:AutoLayout={direction:'column',gap:16,padding:16,alignItems:'stretch',justifyContent:'start'};
 /** Model context must describe the rendered relationships, never compatibility rectangles. */
 export function agentCanvasDocument(doc:CanvasDocument) {
- return {...doc,nodes:doc.nodes.map(canvasToComponent)};
+ // screenPreset is outside the agent contract; omit it so models never echo tablet/desktop values.
+ return {...doc,nodes:doc.nodes.map(node=>{const component=canvasToComponent(node),{screenPreset:_preset,...properties}=component.properties;return {...component,properties};})};
 }
 /** Adapt the public relational tool contract to the backwards-compatible stored node. */
 export function normalizeFlowFields(raw:Record<string,unknown>,previous?:CanvasNode):Record<string,unknown> {

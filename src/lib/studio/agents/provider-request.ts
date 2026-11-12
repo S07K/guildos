@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { claudeCodeLocalKey, claudeCodeResponse, ClaudeCodeError } from '../claude-code-local.ts';
 
 export type AgentProvider = 'openai'|'openrouter'|'groq'|'anthropic';
 export class ProviderFailure extends Error {
@@ -63,6 +64,15 @@ type ResponsesBody={model:string;max_output_tokens?:number;instructions?:string;
 async function anthropicResponse(request:typeof fetch,options:RequestInit):Promise<Response> {
  const key=String(new Headers(options.headers).get('authorization')||'').replace(/^Bearer\s+/i,'');
  const body=JSON.parse(String(options.body)) as ResponsesBody;
+ if(key===claudeCodeLocalKey){
+  // Local development: the developer's Claude Code sign-in (subscription) instead of an API key.
+  try{return await claudeCodeResponse(body,options.signal);}
+  catch(error){
+   if(!(error instanceof ClaudeCodeError))throw error;
+   if(error.kind==='capacity')throw new ProviderFailure(error.message,false,true,{httpStatus:429});
+   throw new ProviderFailure(error.message,error.kind==='timeout'||error.kind==='failed',true);
+  }
+ }
  const client=new Anthropic({apiKey:key,fetch:request,maxRetries:1});
  const schema=body.text?.format?.type==='json_schema'?structuralSchema(body.text.format.schema) as Record<string,unknown>:undefined;
  const small=(body.max_output_tokens||0)<=600;
@@ -110,6 +120,12 @@ export async function requestAgentResponse(provider:AgentProvider,request:typeof
   }
   if(response.ok)return response;
   const details=await failureDetails(response);
+  if(process.env.NODE_ENV==='development'){
+   // Dev-only diagnostics: the provider's own reason and the tail of any rejected generation.
+   const body=await response.clone().json().catch(()=>null);
+   const generation=typeof body?.error?.failed_generation==='string'?body.error.failed_generation:'';
+   console.info('[GuildOS agent]',JSON.stringify({time:new Date().toISOString(),event:'provider_error_detail',provider,status:response.status,code:details.code,message:details.message,failed_generation_chars:generation.length,failed_generation_tail:generation.slice(-600)},null,2));
+  }
   const unsupportedConstraint=[400,422].includes(response.status)&&/schema|structured.output|response_format|text\.format/i.test(details.message+' '+details.code)&&/unsupported|not supported|not permitted|not allowed|unknown keyword/i.test(details.message)&&/minLength|maxLength|pattern|format|minimum|maximum|multipleOf|minItems|maxItems/i.test(details.message);
   if(attempt===0&&unsupportedConstraint&&typeof current.body==='string'){
    const body=JSON.parse(current.body);

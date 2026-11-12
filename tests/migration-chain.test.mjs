@@ -26,7 +26,7 @@ test('the complete migration directory applies in deployment order to a fresh da
    catch (error) { throw new Error(`Migration ${file} failed`, { cause: error }); }
   }
   const { rows } = await db.query("SELECT tablename FROM pg_tables WHERE schemaname = 'public'");
-  assert.ok(rows.some(row => row.tablename === 'waitlist'));
+  assert.ok(!rows.some(row => row.tablename.startsWith('waitlist')));
   assert.ok(rows.some(row => row.tablename === 'studio_projects'));
  } finally { await db.close(); }
 });

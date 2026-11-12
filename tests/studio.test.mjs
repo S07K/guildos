@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { PGlite } from '@electric-sql/pglite';
 import { sealKey, openKey } from '../src/lib/studio/vault.mjs';
 import { renderDesign, validDestination } from '../src/lib/studio/design.mjs';
-import { generateDesign } from '../src/lib/studio/generate.mjs';
+import { runGuild } from '../src/lib/studio/guild.ts';
 
 const design = { brand: 'Cove', eyebrow: 'Space to think', headline: 'Good work starts here.', description: 'A studio for small creative teams.', cta: 'Book a visit', style: 'editorial', palette: 'ocean', features: [{ title: 'Space', description: 'Room for your work.' }, { title: 'Community', description: 'Meet other makers.' }, { title: 'Focus', description: 'Quiet when you need it.' }], closingTitle: 'Find your space.', closingDescription: 'Come see the studio.', designNotes: 'A quiet editorial direction.' };
 
@@ -51,13 +51,13 @@ test('generation and revision share the component pipeline and retain canvas con
   const value=payload.text.format.name==='pipeline_audit'?{summary:'Passed',issues:[]}:{mode:'edit',summary:'Updated the screen.',upsert_nodes:nodes,delete_ids:[],handoff:null,stage_complete:true};
   return Response.json({status:'completed',model:'gpt-4.1-mini',usage:{input_tokens:300,output_tokens:200},output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(value)}]}]});
  };
- const first=await generateDesign({key:'test-only',brief:'Create a studio page.'},request);
+ const first=await runGuild({key:'test-only',brief:'Create a studio page.'},request);
  assert.equal(first.input_tokens,1500);assert.equal(first.document.kind,'canvas');
  assert.equal(JSON.parse(payloads[0].input).current_canvas.nodes.length,0);
- await generateDesign({key:'test-only',brief:'Create a studio page.',previous:first.document,feedback:'Make it warmer.'},request);
+ await runGuild({key:'test-only',brief:'Create a studio page.',previous:first.document,feedback:'Make it warmer.'},request);
  assert.equal(JSON.parse(payloads[5].input).instruction,'Make it warmer.');
  assert.equal(JSON.parse(payloads[5].input).current_canvas.nodes[0].id,'screen');
- for(const response of [Response.json({}, {status:401}),Response.json({}, {status:429}),Response.json({status:'incomplete'}),Response.json({status:'completed',output:[{type:'message',content:[{type:'refusal'}]}]}),Response.json({status:'completed',output:[]})])await assert.rejects(generateDesign({key:'test-only',brief:'test'},async()=>response));
+ for(const response of [Response.json({}, {status:401}),Response.json({}, {status:429}),Response.json({status:'incomplete'}),Response.json({status:'completed',output:[{type:'message',content:[{type:'refusal'}]}]}),Response.json({status:'completed',output:[]})])await assert.rejects(runGuild({key:'test-only',brief:'test'},async()=>response));
 });
 
 test('studio RLS isolates tenants, protects credentials and versions, and enforces persistent generation locks', async () => {

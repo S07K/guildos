@@ -6,7 +6,6 @@ export const requestedChanges=(instruction:string)=>instruction.split(/Requested
 export const isRevisionRequest=(instruction:string,isRevision=false)=>isRevision||/Requested changes:/i.test(instruction)||/\b(fix|revise|change|remove|duplicate|navigation bar|go back)\b/i.test(requestedChanges(instruction));
 const targetMarker=/\u2063guildos-layer:([a-z0-9-]{1,80})\u2063/i;
 export const encodeLayerReference=(id:string)=>`\u2063guildos-layer:${id}\u2063`;
-export const stripLayerReference=(text:string)=>text.replace(targetMarker,'').trimEnd();
 /** Translate the visible #layer name back to its stable node ID. */
 export function resolveLayerReference(document:CanvasDocument,instruction:string,rootId?:string):string|undefined {
  const text=requestedChanges(instruction);

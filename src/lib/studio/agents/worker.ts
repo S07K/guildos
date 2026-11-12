@@ -6,11 +6,17 @@ import { blankCanvas, isCanvas } from '../canvas.ts';
 import { canvasQualityIssues } from '../canvas-quality.ts';
 import { screenDocument } from '../screen-scope.ts';
 import { openKey } from '../vault.mjs';
+import { hasClaudeCodeConnection, claudeCodeLocalKey, localClaudeCodeModel } from '../claude-code-local.ts';
 import { hasChatGPTPlan, chatGPTConnection } from '../chatgpt-oauth.ts';
 import { agentIdentity, type AgentRole } from '../agent-roles.ts';
-import { initialPipeline, PipelineGateError, pipelineRoles, stageInstructions, advanceDraft, rejectOrApprove, type PipelineState } from './pipeline.ts';
+import { initialPipeline, PipelineGateError, pipelineRoles, advanceDraft, rejectOrApprove, type PipelineState } from './pipeline.ts';
 import { proposeCanvasWork, auditPipeline, ProviderFailure } from './proposal.ts';
 import { trialConfig, claimTrialRun, releaseTrialRun, trialExhaustedMessage,noModelMessage } from '../trial.ts';
+import { isHtmlScreen, parseDeviceVersion, parseScreenScope, parseRegenerate, parseScreenTarget, parseVariation, stripScreenScope, type HtmlScreenDocument } from '../html-screen.ts';
+import { applyPlan, applyVariationLook, completeSection, deviceVersionState, variationState, failSection, initialSectionState, nextBatch, regenerateState, scopedSectionState, settle, usesSectionPipeline, type SectionPipelineState } from './section-pipeline.ts';
+import { buildSection, planScreen, SectionFailure, type SectionConnection } from './section-agents.ts';
+import { defaultImageModel, generateScreenImages, type ImageConnection } from './screen-images.ts';
+import { assetUrl, storeProjectImage } from '../project-assets.ts';
 
 function devWorkerLog(event:string,details:Record<string,unknown>={}) {
  if(process.env.NODE_ENV==='development') console.info('[GuildOS worker]',JSON.stringify({time:new Date().toISOString(),event,...details},null,2));
@@ -84,13 +90,17 @@ export async function runNextTask(client:SupabaseClient, propose=proposeCanvasWo
   ]);
   if(projectResult.error||versionResult.error||notesResult.error||keyResult.error||(routerResult.error&&routerResult.error.code!=='PGRST205')||(groqResult.error&&groqResult.error.code!=='PGRST205')||(claudeResult.error&&claudeResult.error.code!=='PGRST205')) throw new Error('Project context could not be loaded.');
   const version=versionResult.data;
-  if(version&&!isCanvas(version.document)) {await blocked('This project uses a legacy landing-page document. Save a canvas before assigning canvas work.');return true;}
-  const document=version?.document||blankCanvas();
-
-  if(JSON.stringify(document).length>120000) {await blocked('This canvas is too large for one agent task. Split the work into smaller tasks.');return true;}
+  const loaded=await client.from('studio_pipeline_drafts').select('state').eq('task_id',task.id).eq('workspace_id',task.workspace_id).maybeSingle();
+  if(loaded.error)throw new Error('Could not load the private pipeline draft. Apply the sequential pipeline migration.');
+  const sectionPipeline=usesSectionPipeline(version?.document,loaded.data?.state);
+  if(!sectionPipeline&&version&&!isCanvas(version.document)) {await blocked('This project uses a legacy landing-page document. Save a canvas before assigning canvas work.');return true;}
+  const document=isCanvas(version?.document)?version.document:blankCanvas();
+  if(!sectionPipeline&&JSON.stringify(document).length>120000) {await blocked('This canvas is too large for one agent task. Split the work into smaller tasks.');return true;}
   type Connection={key:string;model:string;provider:'openai'|'openrouter'|'groq'|'anthropic';chatgptPlan?:boolean;trial?:boolean;request?:typeof fetch};
   const connections:Connection[]=[];
-  if(claudeResult.data) connections.push({key:openKey(claudeResult.data.ciphertext,task.workspace_id),model:process.env.STUDIO_ANTHROPIC_MODEL||claudeResult.data.model,provider:'anthropic'});
+  // Local development: a workspace that connected Claude Code uses the signed-in CLI (subscription) instead of a stored key.
+  if(await hasClaudeCodeConnection(task.workspace_id)) connections.push({key:claudeCodeLocalKey,model:localClaudeCodeModel(),provider:'anthropic'});
+  else if(claudeResult.data) connections.push({key:openKey(claudeResult.data.ciphertext,task.workspace_id),model:process.env.STUDIO_ANTHROPIC_MODEL||claudeResult.data.model,provider:'anthropic'});
   if(groqResult.data) connections.push({key:openKey(groqResult.data.ciphertext,task.workspace_id),model:groqResult.data.model,provider:'groq'});
   if(routerResult.data) connections.push({key:openKey(routerResult.data.ciphertext,task.workspace_id),model:routerResult.data.model,provider:'openrouter'});
   if(keyResult.data) connections.push({key:openKey(keyResult.data.ciphertext,task.workspace_id),model:process.env.STUDIO_OPENAI_MODEL||'gpt-4.1-mini',provider:'openai'});
@@ -108,7 +118,7 @@ export async function runNextTask(client:SupabaseClient, propose=proposeCanvasWo
   let active=connections[0];
   const withProviderFallback=async<T>(run:(connection:Connection)=>Promise<T>):Promise<T>=>{
    let lastError:unknown;
-   const label=(connection:Connection)=>connection.trial?'the GuildOS trial model':connection.provider==='anthropic'?'Claude':connection.provider==='groq'?'Groq':connection.provider==='openrouter'?'OpenRouter':connection.chatgptPlan?'ChatGPT':'OpenAI API';
+   const label=(connection:Connection)=>connection.trial?'the GuildOS trial model':connection.provider==='anthropic'?(connection.key===claudeCodeLocalKey?'Claude Code (local)':'Claude'):connection.provider==='groq'?'Groq':connection.provider==='openrouter'?'OpenRouter':connection.chatgptPlan?'ChatGPT':'OpenAI API';
    for(let index=0;index<connections.length;index++) {
     const connection=connections[index];
     active=connection;
@@ -126,8 +136,14 @@ export async function runNextTask(client:SupabaseClient, propose=proposeCanvasWo
    throw lastError;
   };
   const recordedModel=(value:string)=>active.provider==='openrouter'?(value.startsWith('openrouter/')?value:`openrouter/${value}`):active.provider==='groq'?(value.startsWith('groq/')?value:`groq/${value}`):active.chatgptPlan?`chatgpt/${value}`:value;
-  const loaded=await client.from('studio_pipeline_drafts').select('state').eq('task_id',task.id).eq('workspace_id',task.workspace_id).maybeSingle();
-  if(loaded.error)throw new Error('Could not load the private pipeline draft. Apply the sequential pipeline migration.');
+  if(sectionPipeline){
+   // Photos use the workspace's own OpenAI or OpenRouter key; the shared trial falls back to stock photos.
+   const imageConnection:ImageConnection|null=keyResult.data?{provider:'openai',key:openKey(keyResult.data.ciphertext,task.workspace_id),model:defaultImageModel('openai')}
+    :routerResult.data?{provider:'openrouter',key:openKey(routerResult.data.ciphertext,task.workspace_id),model:defaultImageModel('openrouter')}:null;
+   await runSectionStep({client,task,token,abort,event,finish,blocked,withProviderFallback,imageConnection,recordedModel:value=>recordedModel(value),activeModel:()=>active.model,setRole:next=>{role=next;},
+    brief:projectResult.data!.brief,notes:[...(notesResult.data||[])].reverse(),saved:loaded.data?.state as SectionPipelineState|undefined});
+   return true;
+  }
   const requestedState=initialPipeline(document,task.instruction,version?.id||null);
   let state:PipelineState;
   if(loaded.data){
@@ -205,4 +221,129 @@ export async function runNextTask(client:SupabaseClient, propose=proposeCanvasWo
   if(reserved) await client.rpc('release_studio_generation',{workspace:task.workspace_id,token});
  }
  return true;
+}
+
+type SectionStepContext={
+ client:SupabaseClient;task:{id:string;workspace_id:string;project_id:string;instruction:string};imageConnection:ImageConnection|null;token:string;abort:AbortController;
+ event:(kind:'status'|'handoff'|'result'|'error',body:string)=>Promise<void>;finish:(result:object)=>Promise<{status?:string}|null>;blocked:(summary:string)=>Promise<unknown>;
+ withProviderFallback:<T>(run:(connection:SectionConnection)=>Promise<T>)=>Promise<T>;recordedModel:(value:string)=>string;activeModel:()=>string;setRole:(role:AgentRole)=>void;
+ brief:string;notes:unknown[];saved?:SectionPipelineState;
+};
+type BoardScreen={id:string;name:string;device:string;x:number;y:number;head_version_id:string|null;updated_at:string};
+
+/** The project's live screens, newest first. */
+async function boardScreens(ctx:SectionStepContext):Promise<BoardScreen[]>{
+ const result=await ctx.client.from('studio_screens').select('id,name,device,x,y,head_version_id,updated_at,deleted_at').eq('project_id',ctx.task.project_id).eq('workspace_id',ctx.task.workspace_id);
+ if(result.error)throw new Error('Could not load the board. Apply the screens migration.');
+ return (result.data as (BoardScreen&{deleted_at:string|null})[]).filter(screen=>!screen.deleted_at).sort((a,b)=>String(b.updated_at).localeCompare(String(a.updated_at)));
+}
+async function loadScreenDocument(ctx:SectionStepContext,versionId:string|null):Promise<HtmlScreenDocument|null>{
+ if(!versionId)return null;
+ const result=await ctx.client.from('studio_screen_versions').select('id,document').eq('id',versionId).eq('workspace_id',ctx.task.workspace_id).maybeSingle();
+ if(result.error)throw new Error('Could not load the screen.');
+ return isHtmlScreen(result.data?.document)?result.data!.document as HtmlScreenDocument:null;
+}
+
+/**
+ * Where a request goes on the board, from its invisible markers:
+ * no screen → a new screen (styled like the board); screen → re-plan that screen;
+ * screen + section/add scope → that section; screen + device → a new device version beside it.
+ */
+async function initialState(ctx:SectionStepContext):Promise<SectionPipelineState>{
+ const instruction=ctx.task.instruction,screenId=parseScreenTarget(instruction);
+ if(!screenId)return initialSectionState(null,null);
+ const target=(await boardScreens(ctx)).find(screen=>screen.id===screenId);
+ const document=target?await loadScreenDocument(ctx,target.head_version_id):null;
+ if(!target||!document)throw new Error('That screen is no longer on the board. Select it again before sending the request.');
+ const device=parseDeviceVersion(instruction),scope=parseScreenScope(instruction),variation=parseVariation(instruction);
+ if(device)return deviceVersionState({id:target.id,x:target.x,y:target.y,document},device);
+ if(variation)return variationState({id:target.id,headVersionId:target.head_version_id!,document},variation);
+ if(parseRegenerate(instruction))return regenerateState(target.id,target.head_version_id!);
+ if(scope)return scopedSectionState(target.id,target.head_version_id!,document,scope,stripScreenScope(instruction).trim());
+ return initialSectionState(target.id,target.head_version_id);
+}
+
+/** One lease of the section pipeline: plan the screen, or build the next batch of sections and publish when none remain. */
+async function runSectionStep(ctx:SectionStepContext) {
+ const {client,task,token,abort,event}=ctx;
+ const request=stripScreenScope(task.instruction).trim();
+ let state=ctx.saved;
+ if(!state){
+  let initial:SectionPipelineState;
+  try{initial=await initialState(ctx);}
+  catch(error){await ctx.blocked(error instanceof Error?error.message:'The screen could not be found.');return;}
+  const initialized=await client.rpc('init_studio_sections',{p_task:task.id,p_token:token,p_state:initial});
+  if(initialized.error)throw new Error('Could not initialize the section draft. Apply the screens migration.');
+  if(initialized.data?.status==='stale')return;
+  state=initialized.data.state as SectionPipelineState;
+ }
+ // Parallel sections finish in any order; checkpoints are applied one at a time against the latest state.
+ let queue=Promise.resolve(true);
+ const checkpoint=(change:(current:SectionPipelineState)=>SectionPipelineState,speaker:AgentRole,usage:{summary:string;model:string;input_tokens:number;output_tokens:number},release=false)=>queue=queue.then(async ok=>{
+  if(!ok||abort.signal.aborted)return false;
+  const next=change(state!);
+  const saved=await client.rpc('checkpoint_studio_sections',{p_task:task.id,p_token:token,p_previous:state,p_next:next,p_speaker:speaker,p_summary:usage.summary.slice(0,2000),p_model:ctx.recordedModel(usage.model),p_input:usage.input_tokens,p_output:usage.output_tokens,p_release:release});
+  if(saved.error)throw new Error('Could not save the section checkpoint.');
+  if(saved.data?.status==='stale'){abort.abort();return false;}
+  state=next;return true;
+ });
+ if(state.phase==='plan'){
+  ctx.setRole('creative_director');
+  // Re-planning an existing screen keeps its look; a new screen borrows the board's look.
+  // A variation plans only a new look for the source screen, which it keeps the sections and photos of.
+  const variation=state.edit?.mode==='variation'?state.edit:null;
+  const source=variation?await loadScreenDocument(ctx,variation.sourceVersionId):null;
+  if(variation&&!source){await ctx.blocked('The screen to vary is no longer available.');return;}
+  // Regenerate starts from a blank slate for the same screen: the planner sees its purpose, not its look.
+  const regenerate=state.edit?.mode==='regenerate';
+  const current=state.screenId?await loadScreenDocument(ctx,state.baseVersionId):null;
+  const previous=regenerate?null:current;
+  const styleReference=state.screenId||source?null:await loadScreenDocument(ctx,(await boardScreens(ctx)).find(screen=>screen.head_version_id)?.head_version_id??null);
+  await event('status',source?`Exploring a different look for ${source.name}.`:regenerate&&current?`Designing ${current.name} again from scratch.`:previous?`Re-planning ${previous.name}.`:'Planning a new screen: theme tokens and sections.');
+  const plan=await ctx.withProviderFallback(connection=>planScreen(connection,{brief:ctx.brief,instruction:request,previous,styleReference,variation:source&&variation?{source,index:variation.index}:undefined,regenerate:regenerate&&current?current:undefined,notes:ctx.notes,signal:abort.signal}));
+  let screen=source&&variation?applyVariationLook(source,plan.screen,variation.index):regenerate&&current?{...plan.screen,name:current.name,device:current.device}:plan.screen;
+  const usage={model:plan.model,input_tokens:plan.input_tokens,output_tokens:plan.output_tokens};
+  if(!source&&screen.art?.images.length){
+   await event('status',`Generating ${screen.art.images.length} photos: ${screen.art.direction}`);
+   const store=async(bytes:Uint8Array)=>assetUrl(task.project_id,(await storeProjectImage(client,{workspaceId:task.workspace_id,projectId:task.project_id},bytes)).id);
+   const images=await generateScreenImages(screen.art,{connection:ctx.imageConnection,store,signal:abort.signal,onProgress:message=>event('status',message)});
+   screen={...screen,art:images.art};
+   for(const spent of images.usage){usage.input_tokens+=spent.input_tokens;usage.output_tokens+=spent.output_tokens;}
+  }
+  if(await checkpoint(current=>applyPlan(current,screen),'creative_director',{...usage,summary:plan.summary},true))await event('result',`${plan.summary} Sections: ${screen.sections.map(section=>section.id).join(', ')}.`);
+  return;
+ }
+ ctx.setRole('ui_designer');
+ const batch=nextBatch(state);
+ if(batch.length){
+  await event('status',`Building ${batch.map(section=>section.id).join(', ')}.`);
+  const screen=state.document!,plan=state.edit;
+  await Promise.all(batch.map(async section=>{
+   try {
+    const edit=plan?.mode==='device'?{sourceHtml:plan.sources[section.id],sourceDevice:plan.sourceDevice}:plan&&'sectionId' in plan&&plan.sectionId===section.id?plan:undefined;
+    const built=await ctx.withProviderFallback(connection=>buildSection(connection,{brief:ctx.brief,instruction:request,screen,sectionId:section.id,edit,signal:abort.signal}));
+    await checkpoint(current=>completeSection(current,section.id,built.html),'ui_designer',{...built,summary:`${section.id}: ${built.summary}`});
+   } catch(error) {
+    if(abort.signal.aborted)return;
+    const message=error instanceof ProviderFailure?error.message:'The section could not be generated.';
+    await event('error',`${section.id}: ${message}`);
+    const spent=error instanceof SectionFailure?error.usage:{model:ctx.activeModel(),input_tokens:0,output_tokens:0};
+    await checkpoint(current=>failSection(current,section.id,message),'ui_designer',{...spent,summary:`${section.id} failed: ${message}`});
+   }
+  }));
+  if(!await queue)return;
+ }
+ let finished:SectionPipelineState;
+ try{finished=settle(state);}catch(error){await ctx.blocked(error instanceof Error?error.message:'The screen could not be generated.');return;}
+ const sections=finished.document!.sections,ready=sections.filter(section=>section.status==='ready').length;
+ if(finished.phase!=='done'){
+  await checkpoint(current=>current,'ui_designer',{summary:`Built ${ready} of ${sections.length} sections; continuing.`,model:ctx.activeModel(),input_tokens:0,output_tokens:0},true);
+  return;
+ }
+ const edit=finished.edit,name=finished.document!.name;
+ const summary=edit?.mode==='device'||edit?.mode==='variation'?`Created ${name}.`:edit?.mode==='regenerate'?`${name} was regenerated: ${ready} of ${sections.length} sections built.`:edit?`${edit.mode==='add'?'Added':'Updated'} the ${edit.sectionId} section of ${name}.`:finished.screenId?`${name} was re-planned: ${ready} of ${sections.length} sections built.`:`${name} is ready for review: ${ready} of ${sections.length} sections built.`;
+ // A lease that stopped after the final checkpoint resumes straight at publishing.
+ if(state.phase!=='done'&&!await checkpoint(()=>finished,'ui_designer',{summary,model:ctx.activeModel(),input_tokens:0,output_tokens:0}))return;
+ const saved=await ctx.finish({mode:'edit',summary,document:finished.document,commands:[],expectedVersionId:finished.baseVersionId,model:ctx.recordedModel(ctx.activeModel()),input_tokens:0,output_tokens:0});
+ await event(saved?.status==='review'?'result':'error',saved?.status==='review'?'The screen is ready for review.':'The screen changed while it was being built; it was not published.');
 }

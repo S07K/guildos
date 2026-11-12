@@ -24,11 +24,43 @@ type DeviceState = {
     scopes?: string[];
     identity?: { email?: string | null; name?: string | null };
 };
-export function Connections({ suffix, openRouterSuffix, groqSuffix, claudeSuffix = null }: {
+type ClaudeCodeState = { status: 'idle' | 'checking' | 'connected' | 'error'; identity?: { email?: string | null }; planType?: string | null; error?: string };
+/** Local development only: connect the Claude Code CLI signed in on this machine (Claude subscription). */
+function ClaudeCodeCard() {
+    const [state, setState] = useState<ClaudeCodeState>({ status: 'checking' });
+    useEffect(() => {
+        let active = true;
+        fetch('/api/studio/connections/claude-code', { cache: 'no-store' }).then(response => response.json()).then(data => {
+            if (active) setState(['idle', 'connected', 'error'].includes(data.status) ? data : { status: 'error', error: data.error || 'Could not load the Claude Code connection.' });
+        }).catch(() => { if (active) setState({ status: 'idle' }); });
+        return () => { active = false; };
+    }, []);
+    async function connect() {
+        setState({ status: 'checking' });
+        try {
+            const response = await fetch('/api/studio/connections/claude-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'connect' }) });
+            const data = await response.json();
+            setState(response.ok ? data : { status: 'error', error: data.error || 'Could not connect Claude Code.' });
+        } catch { setState({ status: 'error', error: 'Could not connect Claude Code.' }); }
+    }
+    async function disconnect() {
+        const response = await fetch('/api/studio/connections/claude-code', { method: 'DELETE' });
+        const data = await response.json().catch(() => ({}));
+        setState(response.ok ? { status: 'idle' } : { status: 'error', error: data.error || 'Could not disconnect Claude Code.' });
+    }
+    const detail = [state.identity?.email, state.planType && `${state.planType} plan`].filter(Boolean).join(' · ');
+    return <Card sx={{ height: '100%', border: '1px solid #dfe5eb', borderRadius: 3, boxShadow: 'none', backgroundColor: '#fff' }}><CardContent sx={{ p: 3, display: 'flex', flexDirection: 'column', minHeight: 310 }}><Stack direction="row" sx={{ mb: 3, justifyContent: 'space-between', alignItems: 'center' }}><ConnectionLogo provider="claude"/><Chip label={state.status === 'connected' ? 'Connected' : 'Local · Claude plan'} color={state.status === 'connected' ? 'success' : 'default'} variant="outlined"/></Stack><Typography variant="h6">Claude Code</Typography><Typography variant="body2" color="text.secondary" sx={{ mt: 1, mb: 3, lineHeight: 1.75 }}>Use your Claude subscription through the Claude Code CLI signed in on this machine. Available in local development only.</Typography>
+    {state.status === 'connected' ? <Stack sx={{ mt: 'auto', alignItems: 'flex-start', gap: .5, minWidth: 0, width: '100%' }}><Typography variant="body2" color="success.main" sx={{ maxWidth: '100%', overflowWrap: 'anywhere', lineHeight: 1.45 }}>Connected{detail ? ' · ' + detail : ''}</Typography><Button size="small" onClick={disconnect} sx={{ minWidth: 0, px: 0, lineHeight: 1.4 }}>Disconnect</Button></Stack>
+     : <Button variant="outlined" fullWidth disabled={state.status === 'checking'} onClick={connect} sx={{ mt: 'auto' }}>{state.status === 'checking' ? 'Checking Claude Code…' : state.status === 'error' ? 'Try again' : 'Connect Claude Code'}</Button>}
+    {state.status === 'error' && <Alert severity="error" sx={{ mt: 2 }}>{state.error}</Alert>}
+    <Typography variant="caption" color="text.secondary" sx={{ mt: 2 }}>No key is stored. Usage counts toward your Claude plan limits.</Typography></CardContent></Card>;
+}
+export function Connections({ suffix, openRouterSuffix, groqSuffix, claudeSuffix = null, claudeCodeAvailable = false }: {
     suffix: string | null;
     openRouterSuffix: string | null;
     groqSuffix: string | null;
     claudeSuffix?: string | null;
+    claudeCodeAvailable?: boolean;
 }) {
     const [dialogOpen, setDialogOpen] = useState(false);
     const [keySuffix, setKeySuffix] = useState(suffix);
@@ -105,6 +137,7 @@ export function Connections({ suffix, openRouterSuffix, groqSuffix, claudeSuffix
  <Card sx={{ height: '100%', border: '1px solid #dfe5eb', borderRadius: 3, boxShadow: 'none', backgroundColor: '#fff' }}><CardContent sx={{ p: 3, display: 'flex', flexDirection: 'column', minHeight: 310 }}><Stack direction="row" sx={{ mb: 3, justifyContent: "space-between", alignItems: "center" }}><ConnectionLogo provider="openai"/><Chip label={keySuffix ? 'Connected · •••• ' + keySuffix : 'Bring your own key'} variant="outlined" color={keySuffix ? 'success' : 'default'}/></Stack><Typography variant="h6">OpenAI API</Typography><Typography variant="body2" color="text.secondary" sx={{ mt: 1, mb: 3, lineHeight: 1.75 }}>Pay as you go · Use models billed to your OpenAI API account.</Typography><Button fullWidth variant="contained" onClick={() => setDialogOpen(true)} sx={{ mt: 'auto' }}>{keySuffix ? 'Manage API key' : 'Connect API key'}</Button><Typography variant="caption" color="text.secondary" sx={{ mt: 2 }}>Encrypted at rest. Used only on the server.</Typography></CardContent></Card>
  <Card sx={{ height: '100%', border: '1px solid #dfe5eb', borderRadius: 3, boxShadow: 'none', backgroundColor: '#fff' }}><CardContent sx={{ p: 3, display: 'flex', flexDirection: 'column', minHeight: 310 }}><Stack direction="row" sx={{ mb: 3, justifyContent: 'space-between', alignItems: 'center' }}><ConnectionLogo provider="openrouter"/><Chip label={routerSuffix ? 'Connected · •••• '+routerSuffix : 'Bring your own key'} variant="outlined" color={routerSuffix ? 'success' : 'default'}/></Stack><Typography variant="h6">OpenRouter</Typography><Typography variant="body2" color="text.secondary" sx={{ mt: 1, mb: 3, lineHeight: 1.75 }}>Use NVIDIA Nemotron 3 Super (free) for agent tasks and designs. Free tier limits apply.</Typography><Button fullWidth variant="contained" onClick={()=>setRouterDialogOpen(true)} sx={{ mt:'auto' }}>{routerSuffix?'Manage API key':'Connect OpenRouter'}</Button><Typography variant="caption" color="text.secondary" sx={{ mt: 2 }}>Encrypted at rest. No token charge for this model.</Typography></CardContent></Card>
  <Card sx={{ height: '100%', border: '1px solid #dfe5eb', borderRadius: 3, boxShadow: 'none', backgroundColor: '#fff' }}><CardContent sx={{ p: 3, display: 'flex', flexDirection: 'column', minHeight: 310 }}><Stack direction="row" sx={{ mb: 3, justifyContent: 'space-between', alignItems: 'center' }}><ConnectionLogo provider="claude"/><Chip label={claudeKeySuffix ? 'Connected · •••• '+claudeKeySuffix : 'Bring your own key'} variant="outlined" color={claudeKeySuffix ? 'success' : 'default'}/></Stack><Typography variant="h6">Claude</Typography><Typography variant="body2" color="text.secondary" sx={{ mt: 1, mb: 3, lineHeight: 1.75 }}>Anthropic&apos;s Claude Opus 5.5 for project chat, canvas tasks, and designs. Uses a Claude API key; Claude API billing applies.</Typography><Button fullWidth variant="contained" onClick={()=>setClaudeDialogOpen(true)} sx={{ mt:'auto' }}>{claudeKeySuffix?'Manage API key':'Connect Claude'}</Button><Typography variant="caption" color="text.secondary" sx={{ mt: 2 }}>Encrypted at rest. Used only on the server.</Typography></CardContent></Card>
+ {claudeCodeAvailable && <ClaudeCodeCard/>}
  <Card sx={{ height: '100%', border: '1px solid #dfe5eb', borderRadius: 3, boxShadow: 'none', backgroundColor: '#fff' }}><CardContent sx={{ p: 3, display: 'flex', flexDirection: 'column', minHeight: 310 }}><Stack direction="row" sx={{ mb: 3, justifyContent: 'space-between', alignItems: 'center' }}><ConnectionLogo provider="groq"/><Chip label={groqKeySuffix ? 'Connected · •••• '+groqKeySuffix : 'Bring your own key'} variant="outlined" color={groqKeySuffix ? 'success' : 'default'}/></Stack><Typography variant="h6">Groq</Typography><Typography variant="body2" color="text.secondary" sx={{ mt: 1, mb: 3, lineHeight: 1.75 }}>Fast inference with GPT OSS 120B for project chat, canvas tasks, and designs. Groq usage and billing limits apply.</Typography><Button fullWidth variant="contained" onClick={()=>setGroqDialogOpen(true)} sx={{ mt:'auto' }}>{groqKeySuffix?'Manage API key':'Connect Groq'}</Button><Typography variant="caption" color="text.secondary" sx={{ mt: 2 }}>Encrypted at rest. Used only on the server.</Typography></CardContent></Card></Box>
  <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} fullWidth maxWidth="sm" aria-labelledby="key-dialog-title"><DialogTitle id="key-dialog-title" sx={{ pt: 3, pr: 7 }}>{keySuffix ? 'Update your API key' : 'Connect your API key'}</DialogTitle><IconButton aria-label="Close key dialog" onClick={() => setDialogOpen(false)} sx={{ position: 'absolute', right: 16, top: 16 }}><CloseOutlined /></IconButton><DialogContent sx={{ pb: 3 }}><Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>Bring your own key and keep control of provider billing.</Typography><Alert severity="info" icon={<LockOutlined size={18}/>} sx={{ mb: 3 }}>Your key is encrypted before storage and only decrypted in memory when a generation runs.</Alert><KeyForm connected={Boolean(keySuffix)} onSaved={setKeySuffix} onRemoved={() => setKeySuffix(null)}/><Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 3 }}>API usage is billed by OpenAI. Remove or replace this key at any time.</Typography></DialogContent></Dialog>
  <Dialog open={routerDialogOpen} onClose={()=>setRouterDialogOpen(false)} fullWidth maxWidth="sm" aria-labelledby="openrouter-dialog-title"><DialogTitle id="openrouter-dialog-title" sx={{pt:3,pr:7}}>{routerSuffix?'Manage OpenRouter key':'Connect OpenRouter'}</DialogTitle><IconButton aria-label="Close OpenRouter dialog" onClick={()=>setRouterDialogOpen(false)} sx={{position:'absolute',right:16,top:16}}><CloseOutlined/></IconButton><DialogContent sx={{pb:3}}><Typography variant="body2" color="text.secondary" sx={{mb:2}}>Paste an OpenRouter API key. We verify it before saving.</Typography><Alert severity="info" icon={<LockOutlined size={18}/>} sx={{mb:3}}>Your key is encrypted at rest and used only for server-side model requests.</Alert><OpenRouterKeyForm connected={Boolean(routerSuffix)} onSaved={setRouterSuffix} onRemoved={()=>setRouterSuffix(null)}/></DialogContent></Dialog>

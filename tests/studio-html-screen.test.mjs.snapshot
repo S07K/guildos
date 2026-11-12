@@ -1,0 +1,217 @@
+exports[`the eight common sections pass sanitising unchanged in meaning, and compose to a stable document 1`] = `
+<header class="flex items-center justify-between px-5 pt-4 pb-3">
+  <div>
+    <p class="text-xs font-medium uppercase tracking-widest text-muted">Good morning</p>
+    <h1 class="font-display text-2xl font-semibold text-ink">Threadline</h1>
+  </div>
+  <button class="flex size-11 items-center justify-center rounded-full bg-surface text-ink" aria-label="Open bag" type="button">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h12l-1 13H7L6 7z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg>
+  </button>
+</header>
+`;
+
+exports[`the eight common sections pass sanitising unchanged in meaning, and compose to a stable document 2`] = `
+<div class="px-5">
+  <article class="relative overflow-hidden rounded-3xl bg-primary text-white">
+    <img src="https://images.unsplash.com/photo-1490481651871-ab68de25d43d?w=750&amp;q=80" alt="Linen jackets on a rail" class="h-56 w-full object-cover opacity-80">
+    <div class="absolute inset-x-0 bottom-0 space-y-2 bg-gradient-to-t from-black/70 to-transparent p-5">
+      <p class="text-xs font-semibold uppercase tracking-widest text-accent">Autumn edit</p>
+      <h2 class="font-display text-2xl leading-tight font-semibold">Layers made for slow mornings</h2>
+      <a href="#new-in" class="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium text-ink">Shop the edit</a>
+    </div>
+  </article>
+</div>
+`;
+
+exports[`the eight common sections pass sanitising unchanged in meaning, and compose to a stable document 3`] = `
+<nav class="flex gap-2 overflow-x-auto px-5 py-4" aria-label="Categories">
+  <button class="shrink-0 rounded-full bg-ink px-4 py-2 text-sm font-medium text-white" aria-pressed="true" type="button">All</button>
+  <button class="shrink-0 rounded-full border border-line px-4 py-2 text-sm text-ink" type="button">Outerwear</button>
+  <button class="shrink-0 rounded-full border border-line px-4 py-2 text-sm text-ink" type="button">Knitwear</button>
+  <button class="shrink-0 rounded-full border border-line px-4 py-2 text-sm text-ink" type="button">Trousers</button>
+  <button class="shrink-0 rounded-full border border-line px-4 py-2 text-sm text-ink" type="button">Shoes</button>
+</nav>
+`;
+
+exports[`the eight common sections pass sanitising unchanged in meaning, and compose to a stable document 4`] = `
+<div class="px-5" id="new-in">
+  <div class="mb-3 flex items-baseline justify-between">
+    <h2 class="text-lg font-semibold text-ink">New in</h2>
+    <a href="#all" class="text-sm text-muted">See all</a>
+  </div>
+  <ul class="divide-y divide-line">
+    <li class="flex items-center gap-4 py-3">
+      <img src="https://images.unsplash.com/photo-1434389677669-e08b4cac3105?w=200&amp;q=80" alt="Oat wool cardigan" class="size-20 rounded-2xl object-cover">
+      <div class="min-w-0 flex-1">
+        <p class="truncate font-medium text-ink">Oat wool cardigan</p>
+        <p class="text-sm text-muted">Merino blend · 4 colours</p>
+      </div>
+      <p class="font-semibold text-ink">$128</p>
+    </li>
+    <li class="flex items-center gap-4 py-3">
+      <img src="https://images.unsplash.com/photo-1473966968600-fa801b869a1a?w=200&amp;q=80" alt="Pleated wide trousers" class="size-20 rounded-2xl object-cover">
+      <div class="min-w-0 flex-1">
+        <p class="truncate font-medium text-ink">Pleated wide trousers</p>
+        <p class="text-sm text-muted">Organic cotton twill</p>
+      </div>
+      <p class="font-semibold text-ink">$96</p>
+    </li>
+  </ul>
+</div>
+`;
+
+exports[`the eight common sections pass sanitising unchanged in meaning, and compose to a stable document 5`] = `
+<div class="px-5 py-4">
+  <h2 class="mb-3 text-lg font-semibold text-ink">Picked for you</h2>
+  <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
+    <figure class="space-y-2">
+      <img src="https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=400&amp;q=80" alt="Quilted field jacket" class="aspect-[3/4] w-full rounded-2xl object-cover">
+      <figcaption class="text-sm"><span class="block font-medium text-ink">Quilted field jacket</span><span class="text-muted">$184</span></figcaption>
+    </figure>
+    <figure class="space-y-2">
+      <img src="https://images.unsplash.com/photo-1542272604-787c3835535d?w=400&amp;q=80" alt="Raw denim" class="aspect-[3/4] w-full rounded-2xl object-cover">
+      <figcaption class="text-sm"><span class="block font-medium text-ink">Raw selvedge denim</span><span class="text-muted">$140</span></figcaption>
+    </figure>
+  </div>
+</div>
+`;
+
+exports[`the eight common sections pass sanitising unchanged in meaning, and compose to a stable document 6`] = `
+<ul class="mx-5 grid grid-cols-3 gap-2 rounded-2xl bg-surface p-3 text-center text-xs text-ink">
+  <li class="space-y-1 p-2"><svg viewBox="0 0 24 24" width="20" height="20" class="mx-auto" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h13v10H3z"/><path d="M16 10h4l1 3v4h-5"/></svg><span class="block">Free delivery</span></li>
+  <li class="space-y-1 p-2"><svg viewBox="0 0 24 24" width="20" height="20" class="mx-auto" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12a8 8 0 1 0 3-6.2"/><path d="M4 4v4h4"/></svg><span class="block">30-day returns</span></li>
+  <li class="space-y-1 p-2"><svg viewBox="0 0 24 24" width="20" height="20" class="mx-auto" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-4.5-7-11a7 7 0 0 1 14 0c0 6.5-7 11-7 11z"/></svg><span class="block">Made in Portugal</span></li>
+</ul>
+`;
+
+exports[`the eight common sections pass sanitising unchanged in meaning, and compose to a stable document 7`] = `
+<aside class="m-5 rounded-3xl bg-accent/15 p-5">
+  <h2 class="font-display text-xl font-semibold text-ink">Join the Threadline club</h2>
+  <p class="mt-1 text-sm text-muted">Early access to drops and 10% off your first order.</p>
+  <label class="mt-4 flex gap-2">
+    <input type="email" placeholder="you@example.com" class="min-w-0 flex-1 rounded-full border border-line bg-white px-4 py-3 text-sm">
+    <button class="rounded-full bg-ink px-5 text-sm font-medium text-white" type="button">Join</button>
+  </label>
+</aside>
+`;
+
+exports[`the eight common sections pass sanitising unchanged in meaning, and compose to a stable document 8`] = `
+<nav class="sticky bottom-0 grid grid-cols-4 border-t border-line bg-white/95 px-2 pt-2 pb-6 text-[11px] text-muted backdrop-blur" aria-label="Primary">
+  <a href="#home" class="flex flex-col items-center gap-1 text-ink" aria-current="page"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-7 9 7v9H3z"/></svg>Home</a>
+  <a href="#search" class="flex flex-col items-center gap-1"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>Search</a>
+  <a href="#saved" class="flex flex-col items-center gap-1"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg>Saved</a>
+  <a href="#profile" class="flex flex-col items-center gap-1"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>Profile</a>
+</nav>
+`;
+
+exports[`the eight common sections pass sanitising unchanged in meaning, and compose to a stable document 9`] = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=375, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' https://images.unsplash.com data:; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'none'; form-action 'none'; base-uri 'none'">
+<meta name="guildos:frame" content="width=375, height=812, device=mobile">
+<title>Shop</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Fraunces:wght@400;500;600;700&amp;display=swap">
+<style>/* compiled tailwind */</style>
+<style>html,body{margin:0}body{min-height:100vh}
+[data-section-id]{position:relative}
+[data-section-status="planned"]{padding:16px}
+.guildos-skeleton{height:96px;border-radius:12px;background:linear-gradient(90deg,#eef0f3 25%,#f6f7f9 50%,#eef0f3 75%);background-size:200% 100%;animation:guildos-shimmer 1.4s linear infinite}
+@keyframes guildos-shimmer{to{background-position:-200% 0}}
+@media (prefers-reduced-motion:reduce){.guildos-skeleton{animation:none}}
+.guildos-section-error{margin:16px;padding:12px 14px;border:1px dashed #d14343;border-radius:10px;color:#9b2c2c;font:13px/1.4 system-ui,sans-serif;background:#fff5f5}
+[data-guildos-drawing]{animation:guildos-draw 1.2s cubic-bezier(.65,0,.35,1) both}
+@keyframes guildos-draw{from{clip-path:inset(0 0 100% 0)}to{clip-path:inset(0 0 0 0)}}
+@media (prefers-reduced-motion:reduce){[data-guildos-drawing]{animation:none}}body{background:#fbfaf7}</style>
+</head>
+<body class="font-sans antialiased">
+<main data-screen="Shop">
+<section data-section-id="app-header" data-section-kind="app-header" data-section-status="ready"><header class="flex items-center justify-between px-5 pt-4 pb-3">
+  <div>
+    <p class="text-xs font-medium uppercase tracking-widest text-muted">Good morning</p>
+    <h1 class="font-display text-2xl font-semibold text-ink">Threadline</h1>
+  </div>
+  <button class="flex size-11 items-center justify-center rounded-full bg-surface text-ink" aria-label="Open bag" type="button">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h12l-1 13H7L6 7z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg>
+  </button>
+</header></section>
+<section data-section-id="hero" data-section-kind="hero" data-section-status="ready"><div class="px-5">
+  <article class="relative overflow-hidden rounded-3xl bg-primary text-white">
+    <img src="https://images.unsplash.com/photo-1490481651871-ab68de25d43d?w=750&amp;q=80" alt="Linen jackets on a rail" class="h-56 w-full object-cover opacity-80">
+    <div class="absolute inset-x-0 bottom-0 space-y-2 bg-gradient-to-t from-black/70 to-transparent p-5">
+      <p class="text-xs font-semibold uppercase tracking-widest text-accent">Autumn edit</p>
+      <h2 class="font-display text-2xl leading-tight font-semibold">Layers made for slow mornings</h2>
+      <a href="#new-in" class="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium text-ink">Shop the edit</a>
+    </div>
+  </article>
+</div></section>
+<section data-section-id="category-chips" data-section-kind="category-chips" data-section-status="ready"><nav class="flex gap-2 overflow-x-auto px-5 py-4" aria-label="Categories">
+  <button class="shrink-0 rounded-full bg-ink px-4 py-2 text-sm font-medium text-white" aria-pressed="true" type="button">All</button>
+  <button class="shrink-0 rounded-full border border-line px-4 py-2 text-sm text-ink" type="button">Outerwear</button>
+  <button class="shrink-0 rounded-full border border-line px-4 py-2 text-sm text-ink" type="button">Knitwear</button>
+  <button class="shrink-0 rounded-full border border-line px-4 py-2 text-sm text-ink" type="button">Trousers</button>
+  <button class="shrink-0 rounded-full border border-line px-4 py-2 text-sm text-ink" type="button">Shoes</button>
+</nav></section>
+<section data-section-id="product-list" data-section-kind="product-list" data-section-status="ready"><div class="px-5" id="new-in">
+  <div class="mb-3 flex items-baseline justify-between">
+    <h2 class="text-lg font-semibold text-ink">New in</h2>
+    <a href="#all" class="text-sm text-muted">See all</a>
+  </div>
+  <ul class="divide-y divide-line">
+    <li class="flex items-center gap-4 py-3">
+      <img src="https://images.unsplash.com/photo-1434389677669-e08b4cac3105?w=200&amp;q=80" alt="Oat wool cardigan" class="size-20 rounded-2xl object-cover">
+      <div class="min-w-0 flex-1">
+        <p class="truncate font-medium text-ink">Oat wool cardigan</p>
+        <p class="text-sm text-muted">Merino blend · 4 colours</p>
+      </div>
+      <p class="font-semibold text-ink">$128</p>
+    </li>
+    <li class="flex items-center gap-4 py-3">
+      <img src="https://images.unsplash.com/photo-1473966968600-fa801b869a1a?w=200&amp;q=80" alt="Pleated wide trousers" class="size-20 rounded-2xl object-cover">
+      <div class="min-w-0 flex-1">
+        <p class="truncate font-medium text-ink">Pleated wide trousers</p>
+        <p class="text-sm text-muted">Organic cotton twill</p>
+      </div>
+      <p class="font-semibold text-ink">$96</p>
+    </li>
+  </ul>
+</div></section>
+<section data-section-id="product-grid" data-section-kind="product-grid" data-section-status="ready"><div class="px-5 py-4">
+  <h2 class="mb-3 text-lg font-semibold text-ink">Picked for you</h2>
+  <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
+    <figure class="space-y-2">
+      <img src="https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=400&amp;q=80" alt="Quilted field jacket" class="aspect-[3/4] w-full rounded-2xl object-cover">
+      <figcaption class="text-sm"><span class="block font-medium text-ink">Quilted field jacket</span><span class="text-muted">$184</span></figcaption>
+    </figure>
+    <figure class="space-y-2">
+      <img src="https://images.unsplash.com/photo-1542272604-787c3835535d?w=400&amp;q=80" alt="Raw denim" class="aspect-[3/4] w-full rounded-2xl object-cover">
+      <figcaption class="text-sm"><span class="block font-medium text-ink">Raw selvedge denim</span><span class="text-muted">$140</span></figcaption>
+    </figure>
+  </div>
+</div></section>
+<section data-section-id="feature-row" data-section-kind="feature-row" data-section-status="ready"><ul class="mx-5 grid grid-cols-3 gap-2 rounded-2xl bg-surface p-3 text-center text-xs text-ink">
+  <li class="space-y-1 p-2"><svg viewBox="0 0 24 24" width="20" height="20" class="mx-auto" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h13v10H3z"/><path d="M16 10h4l1 3v4h-5"/></svg><span class="block">Free delivery</span></li>
+  <li class="space-y-1 p-2"><svg viewBox="0 0 24 24" width="20" height="20" class="mx-auto" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12a8 8 0 1 0 3-6.2"/><path d="M4 4v4h4"/></svg><span class="block">30-day returns</span></li>
+  <li class="space-y-1 p-2"><svg viewBox="0 0 24 24" width="20" height="20" class="mx-auto" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-4.5-7-11a7 7 0 0 1 14 0c0 6.5-7 11-7 11z"/></svg><span class="block">Made in Portugal</span></li>
+</ul></section>
+<section data-section-id="cta-banner" data-section-kind="cta-banner" data-section-status="ready"><aside class="m-5 rounded-3xl bg-accent/15 p-5">
+  <h2 class="font-display text-xl font-semibold text-ink">Join the Threadline club</h2>
+  <p class="mt-1 text-sm text-muted">Early access to drops and 10% off your first order.</p>
+  <label class="mt-4 flex gap-2">
+    <input type="email" placeholder="you@example.com" class="min-w-0 flex-1 rounded-full border border-line bg-white px-4 py-3 text-sm">
+    <button class="rounded-full bg-ink px-5 text-sm font-medium text-white" type="button">Join</button>
+  </label>
+</aside></section>
+<section data-section-id="bottom-nav" data-section-kind="bottom-nav" data-section-status="ready"><nav class="sticky bottom-0 grid grid-cols-4 border-t border-line bg-white/95 px-2 pt-2 pb-6 text-[11px] text-muted backdrop-blur" aria-label="Primary">
+  <a href="#home" class="flex flex-col items-center gap-1 text-ink" aria-current="page"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-7 9 7v9H3z"/></svg>Home</a>
+  <a href="#search" class="flex flex-col items-center gap-1"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>Search</a>
+  <a href="#saved" class="flex flex-col items-center gap-1"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg>Saved</a>
+  <a href="#profile" class="flex flex-col items-center gap-1"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>Profile</a>
+</nav></section>
+</main>
+</body>
+</html>
+
+`;

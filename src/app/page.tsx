@@ -5,6 +5,7 @@ import { ProcessArt } from '@/components/process-art';
 import { LandscapeImage } from '@/components/landscape-image';
 import { AgentMark } from '@/components/studio/agent-identity';
 import { AiProviderMark } from '@/components/ai-provider-mark';
+import { GuildOSLogo as Mark } from '@/components/guildos-logo';
 import { ProductPreview } from '@/components/product-preview';
 import { CreativeWorkflow } from '@/components/creative-workflow';
 import { HeroBriefForm } from '@/components/hero-brief-form';
@@ -12,9 +13,6 @@ import type { AgentRole } from '@/lib/studio/agent-roles';
 import { Check, Sparkles } from 'lucide-react';
 import { siteUrl } from '@/lib/site';
 
-function Mark() {
-  return <svg viewBox="0 0 32 32" width="32" height="32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#315b46"/><g fill="#f4f8f4"><rect x="6" y="6" width="8" height="8" rx="2"/><rect x="18" y="6" width="8" height="10" rx="2"/><rect x="6" y="18" width="10" height="8" rx="2"/></g><rect x="20" y="20" width="6" height="6" rx="2" fill="#a8c981"/></svg>;
-}
 
 const specialists: { name: string; role: AgentRole }[] = [
   { name: 'Creative direction', role: 'creative_director' },

@@ -43,37 +43,6 @@ export function canvasQualityIssues(document:CanvasDocument):CanvasIssue[] {
  return result;
 }
 
-/** Fit text and move only agent-edited layers into free space in their own frame. */
-export function repairCanvasTextLayout(document:CanvasDocument,editableIds:Set<string>):CanvasDocument {
- const nodes=document.nodes.map(node=>({...node}));
- const result={...document,nodes};
- const frames=new Map(nodes.filter(node=>node.type==='frame').map(node=>[node.id,node]));
- for(const node of nodes) {
-  if(node.flow||node.type!=='text'||!editableIds.has(node.id)||node.hidden||!node.text.trim())continue;
-  const needed=Math.ceil(textBounds(node).neededHeight);
-  if(needed>node.height)node.height=Math.min(20000,needed);
-  const frame=frames.get(scope(node,result)||'');
-  if(frame&&node.y+node.height>frame.y+frame.height)node.y=Math.max(frame.y,frame.y+frame.height-node.height);
- }
- const texts=nodes.filter(node=>node.type==='text'&&!node.flow&&!node.hidden&&node.text.trim());
- for(const node of texts.filter(item=>editableIds.has(item.id)).reverse()) {
-  const frame=frames.get(scope(node,result)||'');
-  const area=frame||{x:0,y:0,width:document.width,height:document.height};
-  const peers=texts.filter(item=>item.id!==node.id&&scope(item,result)===scope(node,result));
-  for(let pass=0;pass<Math.min(20,peers.length+1)&&peers.some(peer=>overlaps(node,peer));pass++) {
-   const candidates=peers.flatMap(peer=>[
-    {x:node.x,y:peer.y+peer.height+8},
-    {x:peer.x+peer.width+8,y:node.y},
-    {x:node.x,y:peer.y-node.height-8},
-    {x:peer.x-node.width-8,y:node.y},
-   ]).filter(candidate=>candidate.x>=area.x&&candidate.y>=area.y&&candidate.x+node.width<=area.x+area.width&&candidate.y+node.height<=area.y+area.height&&peers.every(peer=>!overlaps({...node,...candidate},peer)))
-    .sort((a,b)=>Math.abs(a.x-node.x)+Math.abs(a.y-node.y)-Math.abs(b.x-node.x)-Math.abs(b.y-node.y));
-   if(!candidates.length)break;
-   node.x=candidates[0].x;node.y=candidates[0].y;
-  }
- }
- return result;
-}
 
 const luminance=(hex:string)=>{
  const channels=[1,3,5].map(start=>parseInt(hex.slice(start,start+2),16)/255).map(channel=>channel<=0.04045?channel/12.92:((channel+0.055)/1.055)**2.4);

@@ -2,7 +2,6 @@ import { componentVariants, type ComponentVariant } from './visual-hierarchy.ts'
 import { normalizeIconName } from './icon-names.ts';
 import { isUnsplashImageUrl, isUnsplashPhoto, type UnsplashPhoto } from './image-source.ts';
 import { isLayoutContainer } from './design-system.ts';
-import type { CSSProperties } from 'react';
 import { renderAutoLayoutHtml, type AutoLayout, type RelativeSize } from './canvas-layout.ts';
 export const CANVAS_WORKSPACE_MARGIN = 40000;
 export const CANVAS_WORKSPACE_SIZE = 80000;
@@ -47,11 +46,7 @@ export function containingFrame(node: CanvasNode, nodes: CanvasNode[]) {
 }
 const color = /^#[0-9a-f]{6}$/i;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-export const canvasAssetUrl = (projectId:string,assetId:string) => `/api/studio/assets/${assetId}?projectId=${projectId}`;
 export const canvasIconUrl = (name:string,fill:string,strokeWidth:number) => `/api/studio/icons/${encodeURIComponent(name)}?color=${encodeURIComponent(fill)}&strokeWidth=${strokeWidth}`;
-export function canvasTextStyle(node:CanvasNode):CSSProperties {
- return {color:node.fill,opacity:node.opacity,fontFamily:'var(--font-sans),sans-serif',fontSize:node.fontSize,fontWeight:node.fontWeight,lineHeight:node.lineHeight??1.2,letterSpacing:node.letterSpacing??0,textAlign:node.textAlign??'left',whiteSpace:'pre-wrap',overflowWrap:'break-word'};
-}
 export function validateCanvas(value: unknown): CanvasDocument {
  if (!isCanvas(value) || !Number.isFinite(value.width) || value.width < 100 || value.width > 10000 || !Number.isFinite(value.height) || value.height < 100 || value.height > 10000 || !color.test(value.background) || !Array.isArray(value.nodes) || value.nodes.length > 200 || value.deletedIds!==undefined&&(!Array.isArray(value.deletedIds)||value.deletedIds.length>2000||value.deletedIds.some(id=>typeof id!=='string'||!/^[a-z0-9-]{1,80}$/i.test(id))||new Set(value.deletedIds).size!==value.deletedIds.length)) throw new Error('Invalid canvas document.');
  const ids = new Set<string>();

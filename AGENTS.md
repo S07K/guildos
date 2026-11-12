@@ -64,10 +64,10 @@ You must inspect, pull patterns from, and directly integrate the following repos
 
 ---
 
-## Phase 1 Execution: The Waitlist MVP
-Before building the core multi-agent orchestration, the immediate priority is to deploy a high-converting waitlist landing page to validate market demand.
+## Current Phase: The Studio (waitlist retired)
+The Phase 1 waitlist has been removed: its route, storage, tests and database table are gone, and every call to action now leads into the studio. Do not reintroduce waitlist capture.
 
-* **Objective:** Capture user interest and collect emails through a seamless "Join Waitlist" flow.
-* **Core Functionality:** Implement an email input field on the hero section. It must validate the email format, securely store it in a database, and display a polished success state (e.g., "You're on the list").
-* **Implementation Rule:** Since this is a brand new project, initialize the repository from scratch using Next.js (App Router) and Tailwind CSS. Set up a lightweight database solution (like Supabase) to handle the waitlist email capture. 
-* **Visual Identity:** The waitlist page must act as the primary marketing asset, strictly adhering to the "GuildOS Aesthetic" defined above (high-contrast dark mode, minimal bento-box layouts, and lightweight SVG animations) to pitch the vision of the product beautifully.
+* **Objective:** Match UX Pilot's editing experience in the GuildOS studio. The control-by-control spec and build order live in `docs/uxpilot-parity.md`; the generation pipeline is described in `docs/section-pipeline-redesign.md`.
+* **Screens:** Agents generate HTML + Tailwind screens section by section (mobile first, with tablet and desktop versions). A project is a board of screens (`studio_screens`), each with its own versions (`studio_screen_versions`); generated HTML is sanitised and rendered only in sandboxed iframes.
+* **Editing:** Prompt edits are scoped to a whole screen, a section, or a new section; Manual Edit changes the HTML directly and saves a new screen version.
+* **Visual Identity:** The marketing site remains the primary brand asset and keeps the "GuildOS Aesthetic" defined above (high-contrast dark mode, minimal bento-box layouts, lightweight SVG animations).
