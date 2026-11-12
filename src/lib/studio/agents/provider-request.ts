@@ -12,6 +12,11 @@ export class ProviderFailure extends Error {
   this.httpStatus=details.httpStatus;this.providerCode=details.providerCode;
  }
 }
+/** The model cannot read the attached reference images; callers retry from the text alone. */
+export class ImageInputUnsupported extends ProviderFailure {
+ constructor(){super('This model cannot read images.',false,true);}
+}
+const hasImages=(body:unknown)=>typeof body==='string'&&body.includes('"input_image"');
 const name=(provider:AgentProvider)=>provider==='openrouter'?'OpenRouter':provider==='groq'?'Groq':provider==='anthropic'?'Claude':'OpenAI';
 const endpoint=(provider:AgentProvider)=>provider==='openrouter'?'https://openrouter.ai/api/v1/responses':provider==='groq'?'https://api.groq.com/openai/v1/responses':'https://api.openai.com/v1/responses';
 const knownCodes=new Set(['invalid_request_error','invalid_json_schema','schema_validation_error','unsupported_parameter','unsupported_value','json_validate_failed','tool_use_failed','model_output_invalid','model_not_found','model_decommissioned','context_length_exceeded','prompt_too_long','rate_limit_exceeded','insufficient_quota','billing_error','usage_limit_exceeded','content_filter','content_policy_violation','safety_violation','authentication_error','permission_error','server_error']);
@@ -55,7 +60,20 @@ function structuralSchema(value:unknown):unknown {
  return Object.fromEntries(Object.entries(value).filter(([key])=>!constraintKeys.has(key)).map(([key,value])=>[key,structuralSchema(value)]));
 }
 export const defaultAnthropicModel='claude-opus-5-5';
-type ResponsesBody={model:string;max_output_tokens?:number;instructions?:string;input:string;text?:{format?:{type?:string;schema?:unknown}}};
+/** Responses input: a string, or one user message mixing text and images (data URLs). */
+export type ResponsesInput=string|{role:'user';content:({type:'input_text';text:string}|{type:'input_image';image_url:string;detail?:'auto'|'low'|'high'})[]}[];
+type ResponsesBody={model:string;max_output_tokens?:number;instructions?:string;input:ResponsesInput;text?:{format?:{type?:string;schema?:unknown}}};
+/** The same input as Claude content blocks (base64 images first, as Anthropic recommends). */
+function anthropicContent(input:ResponsesInput){
+ if(typeof input==='string')return input;
+ const parts=input.flatMap(message=>message.content);
+ const images=parts.flatMap(part=>{
+  if(part.type!=='input_image')return [];
+  const match=/^data:(image\/(?:png|jpeg|webp|gif));base64,(.+)$/.exec(part.image_url);
+  return match?[{type:'image' as const,source:{type:'base64' as const,media_type:match[1] as 'image/png',data:match[2]}}]:[];
+ });
+ return [...images,...parts.flatMap(part=>part.type==='input_text'?[{type:'text' as const,text:part.text}]:[])];
+}
 /**
  * Claude adapter: callers build OpenAI Responses-shaped requests, so translate one
  * into a Messages API call and return a Responses-shaped result. Structured output
@@ -66,6 +84,8 @@ async function anthropicResponse(request:typeof fetch,options:RequestInit):Promi
  const body=JSON.parse(String(options.body)) as ResponsesBody;
  if(key===claudeCodeLocalKey){
   // Local development: the developer's Claude Code sign-in (subscription) instead of an API key.
+  // The CLI path is text-only, so a request with reference images is retried without them.
+  if(typeof body.input!=='string'&&body.input.some(message=>message.content.some(part=>part.type==='input_image')))throw new ImageInputUnsupported();
   try{return await claudeCodeResponse(body,options.signal);}
   catch(error){
    if(!(error instanceof ClaudeCodeError))throw error;
@@ -82,7 +102,7 @@ async function anthropicResponse(request:typeof fetch,options:RequestInit):Promi
    model:body.model||defaultAnthropicModel,max_tokens:Math.max(16000,(body.max_output_tokens||0)+12000),
    betas:['server-side-fallback-2026-07-01'],fallbacks:'default',
    ...(body.instructions?{system:body.instructions}:{}),
-   messages:[{role:'user',content:body.input}],
+   messages:[{role:'user',content:anthropicContent(body.input)}],
    output_config:{effort:small?'low':'medium',...(schema?{format:{type:'json_schema',schema}}:{})},
   },{signal:options.signal||undefined}).finalMessage();
   if(message.stop_reason==='refusal')throw new ProviderFailure('Claude declined this request under its usage policy. Revise the request before retrying.',false,true);
@@ -126,6 +146,7 @@ export async function requestAgentResponse(provider:AgentProvider,request:typeof
    const generation=typeof body?.error?.failed_generation==='string'?body.error.failed_generation:'';
    console.info('[GuildOS agent]',JSON.stringify({time:new Date().toISOString(),event:'provider_error_detail',provider,status:response.status,code:details.code,message:details.message,failed_generation_chars:generation.length,failed_generation_tail:generation.slice(-600)},null,2));
   }
+  if([400,415,422].includes(response.status)&&hasImages(current.body)&&/image|vision|modalit|multimodal/i.test(`${details.message} ${details.code}`))throw new ImageInputUnsupported();
   const unsupportedConstraint=[400,422].includes(response.status)&&/schema|structured.output|response_format|text\.format/i.test(details.message+' '+details.code)&&/unsupported|not supported|not permitted|not allowed|unknown keyword/i.test(details.message)&&/minLength|maxLength|pattern|format|minimum|maximum|multipleOf|minItems|maxItems/i.test(details.message);
   if(attempt===0&&unsupportedConstraint&&typeof current.body==='string'){
    const body=JSON.parse(current.body);

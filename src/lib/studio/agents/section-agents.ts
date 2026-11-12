@@ -6,7 +6,7 @@
  */
 import { cleanClassList, HTML_DEVICE_FRAME, HTML_SECTION_KINDS, IMAGE_PLACEHOLDER, MAX_SCREEN_IMAGES, MAX_SCREEN_SECTIONS, parseSectionHtml, STYLE_RECIPES, type HtmlScreenDocument, type HtmlSection, type HtmlSectionKind, type ImageAspect, type ScreenImage, type StyleRecipes } from '../html-screen.ts';
 import { searchUnsplash, trackUnsplashSelection, unsplashConfigured } from '../unsplash.ts';
-import { ProviderFailure, requestAgentResponse, type AgentProvider } from './provider-request.ts';
+import { ImageInputUnsupported, ProviderFailure, requestAgentResponse, type AgentProvider } from './provider-request.ts';
 
 export type SectionConnection = { key: string; model: string; provider: AgentProvider; request?: typeof fetch };
 type Usage = { model: string; input_tokens: number; output_tokens: number };
@@ -18,10 +18,21 @@ export class SectionFailure extends ProviderFailure {
 const providerName = (provider: AgentProvider) => provider === 'openrouter' ? 'OpenRouter' : provider === 'groq' ? 'Groq' : provider === 'anthropic' ? 'Claude' : 'OpenAI';
 
 /** One strict structured-output request in the Responses shape every provider adapter accepts. */
-async function structured(connection: SectionConnection, call: { name: string; schema: object; instructions: string; input: object; maxOutput: number; signal?: AbortSignal }) {
+/**
+ * Reference images go to the model with the text when it can read them; a model that cannot
+ * gets the same request without them (imagesIgnored tells the caller to say so).
+ */
+type StructuredCall = { name: string; schema: object; instructions: string; input: object; maxOutput: number; images?: string[]; signal?: AbortSignal };
+async function structured(connection: SectionConnection, call: StructuredCall): Promise<Usage & { value: unknown; imagesIgnored: boolean }> {
+ if (!call.images?.length) return { ...await send(connection, call), imagesIgnored: false };
+ try { return { ...await send(connection, call, call.images), imagesIgnored: false }; }
+ catch (error) { if (error instanceof ImageInputUnsupported) return { ...await send(connection, call), imagesIgnored: true }; throw error; }
+}
+async function send(connection: SectionConnection, call: StructuredCall, images?: string[]) {
  const { provider } = connection;
  const body = {
-  model: connection.model, max_output_tokens: call.maxOutput, instructions: call.instructions, input: JSON.stringify(call.input),
+  model: connection.model, max_output_tokens: call.maxOutput, instructions: call.instructions,
+  input: images?.length ? [{ role: 'user', content: [{ type: 'input_text', text: JSON.stringify(call.input) }, ...images.map(url => ({ type: 'input_image', image_url: url, detail: 'auto' }))] }] : JSON.stringify(call.input),
   ...(provider === 'groq' ? {} : { store: false }), ...(provider === 'openrouter' ? { provider: { require_parameters: true } } : {}),
   text: { format: { type: 'json_schema', name: call.name, strict: true, schema: call.schema } },
  };
@@ -143,14 +154,20 @@ VARIATION MODE: variation_of is an existing screen. Design an alternative LOOK f
 Keep its device. Return its sections unchanged (same ids, kinds and intents, in the same order) and no images.
 Change the visual language: palette tokens, background, fonts and style recipes must clearly differ from variation_of.current_look.`;
 
+const REFERENCE_INSTRUCTIONS = `
+
+REFERENCE IMAGES: the user attached images with this request (screenshots, mood boards, brand material or photos).
+Use them as direction: match the layout patterns, density, palette, typography mood and content they show, adapted to GuildOS sections.
+If an image is a screenshot of an existing interface, recreate its structure and hierarchy. Do not copy logos or trademarked artwork.`;
+
 const REGENERATE_INSTRUCTIONS = `
 
 REGENERATE MODE: regenerate_of is an existing screen the user wants designed again from scratch.
 Keep its purpose and device. Create a fresh layout and visual direction: you may restructure, rename and reorder sections. Do not imitate its previous design.`;
 
-export async function planScreen(connection: SectionConnection, input: { brief: string; instruction: string; previous: HtmlScreenDocument | null; styleReference?: HtmlScreenDocument | null; variation?: { source: HtmlScreenDocument; index: number }; regenerate?: HtmlScreenDocument; notes: unknown[]; signal?: AbortSignal }): Promise<Usage & { summary: string; screen: HtmlScreenDocument }> {
+export async function planScreen(connection: SectionConnection, input: { brief: string; instruction: string; previous: HtmlScreenDocument | null; styleReference?: HtmlScreenDocument | null; variation?: { source: HtmlScreenDocument; index: number }; regenerate?: HtmlScreenDocument; device?: HtmlScreenDocument['device']; references?: string[]; notes: unknown[]; signal?: AbortSignal }): Promise<Usage & { summary: string; screen: HtmlScreenDocument; imagesIgnored: boolean }> {
  const result = await structured(connection, {
-  name: 'screen_plan', schema: planSchema, maxOutput: 5000, signal: input.signal, instructions: PLAN_INSTRUCTIONS + (input.variation ? VARIATION_INSTRUCTIONS : '') + (input.regenerate ? REGENERATE_INSTRUCTIONS : ''),
+  name: 'screen_plan', schema: planSchema, maxOutput: 5000, signal: input.signal, images: input.references, instructions: PLAN_INSTRUCTIONS + (input.variation ? VARIATION_INSTRUCTIONS : '') + (input.regenerate ? REGENERATE_INSTRUCTIONS : '') + (input.device ? `\n\nDEVICE: the user chose a ${input.device} screen (${HTML_DEVICE_FRAME[input.device].width}px wide). Set device to ${input.device} and plan sections for that width.` : '') + (input.references?.length ? REFERENCE_INSTRUCTIONS : ''),
   input: {
    brief: input.brief.slice(0, 6000), request: input.instruction.slice(0, 4000), section_kinds: HTML_SECTION_KINDS, recent_discussion: input.notes.slice(-12),
    // A new screen on a board reuses the board's look so every screen belongs to one product.
@@ -164,7 +181,7 @@ export async function planScreen(connection: SectionConnection, input: { brief: 
    existing_screen: input.previous ? { name: input.previous.name, tokens: input.previous.tokens, art_direction: input.previous.art?.direction, style_recipes: input.previous.art?.recipes, sections: input.previous.sections.map(({ id, kind, intent }) => ({ id, kind, intent })) } : null,
   },
  });
- return { ...screenFromPlan(result.value), model: result.model, input_tokens: result.input_tokens, output_tokens: result.output_tokens };
+ return { ...screenFromPlan(result.value), model: result.model, input_tokens: result.input_tokens, output_tokens: result.output_tokens, imagesIgnored: result.imagesIgnored };
 }
 
 // ---------------------------------------------------------------------------
@@ -209,7 +226,7 @@ REVISION: this section already exists. Change only what the request asks for. St
 const ADAPT_INSTRUCTIONS = `
 ADAPT: source_html is this section from the same product's {{FROM}} screen. Rebuild it for this {{TO}} screen: keep its content, copy, images (same src values), style recipes and order of information, but re-lay it out properly for the new width instead of stretching or shrinking it.`;
 
-export async function buildSection(connection: SectionConnection, input: { brief: string; instruction: string; screen: HtmlScreenDocument; sectionId: string; edit?: { previousHtml?: string; path?: string; sourceHtml?: string; sourceDevice?: HtmlScreenDocument['device'] }; imageRequest?: typeof fetch; signal?: AbortSignal }): Promise<Usage & { summary: string; html: string }> {
+export async function buildSection(connection: SectionConnection, input: { brief: string; instruction: string; screen: HtmlScreenDocument; sectionId: string; edit?: { previousHtml?: string; path?: string; sourceHtml?: string; sourceDevice?: HtmlScreenDocument['device'] }; references?: string[]; imageRequest?: typeof fetch; signal?: AbortSignal }): Promise<Usage & { summary: string; html: string }> {
  const index = input.screen.sections.findIndex(section => section.id === input.sectionId);
  const section = input.screen.sections[index];
  if (!section) throw new Error(`Unknown section ${input.sectionId}.`);
@@ -222,12 +239,13 @@ export async function buildSection(connection: SectionConnection, input: { brief
   images: (input.screen.art?.images || []).filter(image => image.section === section.id).map(({ id, alt, aspect }) => ({ id, alt, aspect })),
   ...(input.edit?.previousHtml ? { current_html: input.edit.previousHtml.slice(0, 40000), focus_path: input.edit.path ?? null } : {}),
   ...(input.edit?.sourceHtml ? { source_html: input.edit.sourceHtml.slice(0, 40000) } : {}),
+  ...(input.references?.length ? { reference_images: `${input.references.length} attached: follow their layout and style for this section.` } : {}),
  };
  const usage = { input_tokens: 0, output_tokens: 0 };
  let repair = '';
  for (let attempt = 0; ; attempt++) {
   const result = await structured(connection, {
-   name: 'screen_section', schema: sectionSchema, maxOutput: 6000, signal: input.signal,
+   name: 'screen_section', schema: sectionSchema, maxOutput: 6000, signal: input.signal, images: input.references,
    instructions: sectionInstructions(input.screen.device) + (input.edit?.previousHtml ? REVISE_INSTRUCTIONS : '') + (input.edit?.sourceHtml ? ADAPT_INSTRUCTIONS.replace('{{FROM}}', input.edit.sourceDevice || 'mobile').replace('{{TO}}', input.screen.device) : '') + (repair ? `\nYour previous answer was corrected automatically: ${repair} Return a version that needs no corrections.` : ''),
    input: context,
   });
