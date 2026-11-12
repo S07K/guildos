@@ -341,12 +341,13 @@ test('a share link shows the screen to anyone signed out, until it is revoked', 
  await page.getByRole('button', { name: 'Create project', exact: true }).click();
  await expect(page).toHaveURL(/\/studio\/projects\/[0-9a-f-]{36}$/);
  const projectId = new URL(page.url()).pathname.split('/').at(-1)!;
- const sections = await Promise.all(['app-header', 'hero'].map(async kind => ({ id: kind, kind, intent: `The ${kind}.`, status: 'ready', html: await fixture(kind) })));
+ // Taller than a phone, so the whole design must be reachable by scrolling the share page.
+ const sections = await Promise.all(['app-header', 'hero', 'category-chips', 'product-list', 'product-grid', 'cta-banner', 'bottom-nav'].map(async kind => ({ id: kind, kind, intent: `The ${kind}.`, status: 'ready', html: await fixture(kind) })));
  const screen = { kind: 'html-screen', name: 'Threadline home', device: 'mobile', background: '#fbfaf7', tokens: { colors: { primary: '#1f3d36', accent: '#d9a441', ink: '#1b1f24', muted: '#6b7280', surface: '#f3f1ec', line: '#e5e2da' }, fontSans: 'Inter' }, sections };
  await request.post('http://127.0.0.1:3199/testing/screen', { data: { project_id: projectId, document: screen } });
  await page.reload();
  const frame = page.locator('iframe[title="Threadline home"]');
- await expect(page.frameLocator('iframe[title="Threadline home"]').getByRole('heading', { name: 'Threadline' })).toBeVisible();
+ await expect(page.frameLocator('iframe[title="Threadline home"]').getByRole('heading', { name: 'Threadline', exact: true })).toBeVisible();
  const box = (await frame.boundingBox())!;
  await page.mouse.click(box.x + box.width / 2, box.y + 60);
  const toolbar = page.getByRole('toolbar', { name: 'Threadline home toolbar' });
@@ -360,11 +361,24 @@ test('a share link shows the screen to anyone signed out, until it is revoked', 
  await expect(dialog.getByRole('list', { name: 'Active links' })).toContainText('Threadline home');
 
  // A signed-out visitor sees the screen, view only, and the page is never indexed.
- const visitor = await browser.newContext({ ignoreHTTPSErrors: true });
+ const visitor = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 390, height: 844 } });
  const viewer = await visitor.newPage();
+ // Slow scripts (as in development): the frame finishes loading before the page hydrates.
+ await viewer.route('**/_next/static/chunks/**', async route => { await new Promise(resolve => setTimeout(resolve, 1500)); await route.continue(); });
  await viewer.goto(url);
  await expect(viewer.getByRole('heading', { name: 'Threadline home' })).toBeVisible();
- await expect(viewer.frameLocator('iframe[title="Threadline home"]').getByRole('heading', { name: 'Layers made for slow mornings' })).toBeVisible();
+ await expect(viewer.getByRole('link', { name: 'GuildOS home' })).toBeVisible();
+ const shared = viewer.frameLocator('iframe[title="Threadline home"]');
+ await expect(shared.getByRole('heading', { name: 'Layers made for slow mornings' })).toBeVisible();
+ // The frame grows to the full design, and the page scrolls to its last section on a phone.
+ const sizes = await viewer.locator('iframe[title="Threadline home"]').evaluate(element => { const frame = element as HTMLIFrameElement; return { frame: frame.getBoundingClientRect().height / (frame.getBoundingClientRect().width / frame.offsetWidth), content: frame.contentDocument!.documentElement.scrollHeight }; });
+ expect(sizes.content).toBeGreaterThan(812);
+ expect(Math.abs(sizes.frame - sizes.content)).toBeLessThan(2);
+ const lastSection = viewer.locator('iframe[title="Threadline home"]');
+ await viewer.mouse.wheel(0, 20000);
+ await expect.poll(() => viewer.evaluate(() => window.scrollY)).toBeGreaterThan(400);
+ const bottom = await lastSection.evaluate(element => element.getBoundingClientRect().bottom);
+ expect(bottom).toBeLessThanOrEqual(844 + 1);
  await expect(viewer.locator('meta[name="robots"]')).toHaveAttribute('content', /noindex/);
 
  // Revoking stops the link at once.

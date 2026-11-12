@@ -14,11 +14,13 @@ export function SharedScreen({ name, html, width, minHeight }: { name: string; h
   if (!element) return;
   const observer = new ResizeObserver(() => setAvailable(element.clientWidth));
   observer.observe(element);
+  // The server-rendered frame can finish loading before hydration, when onLoad has already fired.
+  measure();
   return () => { observer.disconnect(); content.current?.disconnect(); };
- }, []);
+ }, []); // eslint-disable-line react-hooks/exhaustive-deps
  const measure = () => {
   const doc = frame.current?.contentDocument;
-  if (!doc?.body) return;
+  if (!doc?.querySelector('main')) return;
   setHeight(Math.max(minHeight, Math.ceil(doc.documentElement.scrollHeight)));
   content.current?.disconnect();
   content.current = new ResizeObserver(() => setHeight(Math.max(minHeight, Math.ceil(doc.documentElement.scrollHeight))));
