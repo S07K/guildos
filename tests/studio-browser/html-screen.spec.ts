@@ -368,6 +368,8 @@ test('a share link shows the screen to anyone signed out, until it is revoked', 
  await viewer.goto(url);
  await expect(viewer.getByRole('heading', { name: 'Threadline home' })).toBeVisible();
  await expect(viewer.getByRole('link', { name: 'GuildOS home' })).toBeVisible();
+ // The title keeps normal spacing (the landing page's large-headline h1 style must not leak in).
+ await expect(viewer.getByRole('heading', { name: 'Threadline home' })).toHaveCSS('letter-spacing', '-0.2px');
  const shared = viewer.frameLocator('iframe[title="Threadline home"]');
  await expect(shared.getByRole('heading', { name: 'Layers made for slow mornings' })).toBeVisible();
  // The frame grows to the full design, and the page scrolls to its last section on a phone.

@@ -27,7 +27,7 @@ export default async function SharedPage({ params }: { params: Promise<{ token: 
   </nav>
   <header style={{ maxWidth: 1440, margin: '0 auto 28px' }}>
    <div>
-    <h1 style={{ font: '650 22px/1.25 system-ui, sans-serif', margin: 0 }}>{board.scope === 'screen' ? screens[0].name : board.project.name}</h1>
+    <h1 style={{ font: '650 22px/1.25 system-ui, sans-serif', letterSpacing: '-.2px', margin: 0 }}>{board.scope === 'screen' ? screens[0].name : board.project.name}</h1>
     <p style={{ font: '400 14px/1.4 system-ui, sans-serif', color: '#5b6770', margin: '4px 0 0' }}>{board.scope === 'screen' ? board.project.name : `${screens.length} screen${screens.length === 1 ? '' : 's'}`} · designed with GuildOS</p>
    </div>
   </header>
