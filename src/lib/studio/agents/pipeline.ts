@@ -157,12 +157,15 @@ export function pipelineIssues(state:PipelineState):PipelineIssue[] {
  const relevant=state.revisionScope?issues.filter(issue=>scoped.nodes.some(node=>node.id!==state.targetScreenId&&inSubtree(scoped,node.id,state.revisionScope!.sectionId)&&issue.key.split(':').includes(node.id))):issues;
  return relevant.map(issue=>{const node=scoped.nodes.find(node=>issue.key.split(':').includes(node.id));return {agent_role:issue.key==='single-screen'||issue.key.startsWith('mobile-screen:')||node?.type==='container'&&!issue.key.startsWith('screen-content:')&&!issue.key.startsWith('menu-')?'ux_architect':'ui_designer',message:issue.message};});
 }
+/** Actions one stage may take; matches checkpoint_studio_pipeline, which accepts action 0-7. */
+export const MAX_STAGE_ACTIONS=8;
 export function advanceDraft(state:PipelineState,result:{document:CanvasDocument;commands:CanvasCommand[];stageComplete?:boolean}):PipelineState {
  validateStageEdit(state,result.document);
- if(!result.stageComplete&&state.action>=14)throw new PipelineGateError('This stage exceeded fifteen actions. The private draft was not published.');
+ // A stage that keeps polishing hands off at the cap instead of failing the run; QA reports anything left.
+ const complete=!!result.stageComplete||state.action>=MAX_STAGE_ACTIONS-1;
  const document=sanitizeVisualHierarchy(result.document,state.targetScreenId,state.revisionScope);
  if(state.revisionScope)assertRevisionScope(state.revisionScope,document);
- return {...state,document,commands:[...state.commands,...result.commands],stage:state.stage+(result.stageComplete?1:0),action:result.stageComplete?0:state.action+1};
+ return {...state,document,commands:[...state.commands,...result.commands],stage:state.stage+(complete?1:0),action:complete?0:state.action+1};
 }
 export function rejectOrApprove(state:PipelineState,reported:PipelineIssue[]):PipelineState {
  if(state.stage!==4)throw new Error('Only the final QA stage can approve a turn.');
