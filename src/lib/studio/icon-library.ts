@@ -24,11 +24,6 @@ export function searchIcons(query:string,limit=32):string[] {
  }).filter((item):item is {name:string;score:number}=>!!item).sort((a,b)=>b.score-a.score||a.name.localeCompare(b.name)).slice(0,safeLimit).map(item=>item.name);
 }
 
-export function suggestIcons(instruction:string,brief:string) {
- const words=`${instruction} ${brief}`.toLowerCase().match(/[a-z]{3,}/g)||[];
- const matches=[...new Set(words)].slice(0,24).flatMap(word=>searchIcons(word,3));
- return [...new Set([...matches,...featured])].slice(0,80);
-}
 
 export function renderIconSvg(name:string,color='#202b38',strokeWidth=2) {
  if(!isKnownIcon(name)||!hexColor.test(color)||!Number.isFinite(strokeWidth)||strokeWidth<0.5||strokeWidth>4) throw new Error('Invalid icon request.');
