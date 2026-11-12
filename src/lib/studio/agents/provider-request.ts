@@ -110,6 +110,12 @@ export async function requestAgentResponse(provider:AgentProvider,request:typeof
   }
   if(response.ok)return response;
   const details=await failureDetails(response);
+  if(process.env.NODE_ENV==='development'){
+   // Dev-only diagnostics: the provider's own reason and the tail of any rejected generation.
+   const body=await response.clone().json().catch(()=>null);
+   const generation=typeof body?.error?.failed_generation==='string'?body.error.failed_generation:'';
+   console.info('[GuildOS agent]',JSON.stringify({time:new Date().toISOString(),event:'provider_error_detail',provider,status:response.status,code:details.code,message:details.message,failed_generation_chars:generation.length,failed_generation_tail:generation.slice(-600)},null,2));
+  }
   const unsupportedConstraint=[400,422].includes(response.status)&&/schema|structured.output|response_format|text\.format/i.test(details.message+' '+details.code)&&/unsupported|not supported|not permitted|not allowed|unknown keyword/i.test(details.message)&&/minLength|maxLength|pattern|format|minimum|maximum|multipleOf|minItems|maxItems/i.test(details.message);
   if(attempt===0&&unsupportedConstraint&&typeof current.body==='string'){
    const body=JSON.parse(current.body);
