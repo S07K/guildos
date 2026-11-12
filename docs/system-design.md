@@ -255,6 +255,10 @@ erDiagram
 - Restoring an old version saves it as a **new** version. History is never rewritten.
 - Removing a screen sets `deleted_at`; its versions stay.
 
+Share links live in `studio_share_links`: the 192-bit token is stored only as a SHA-256 hash
+(for lookup) and a workspace-bound encrypted copy (so the owner can copy it again); revoking
+sets `revoked_at` and the public page 404s at once.
+
 Other tables: `studio_versions` (older node-canvas and landing-page projects),
 `studio_agent_messages` (direct chats with one agent), `studio_generation_limits` (one
 generation slot per workspace), `studio_trial_runs`, and one table per provider key type.
@@ -296,6 +300,7 @@ flowchart LR
 | Generate ▾ | Variations (2 alternative looks) · Desktop / Tablet / Mobile version · Regenerate | new screens on the board; Regenerate saves the next version of the same screen |
 | More ▾ | Version history with Restore; Duplicate; Remove screen | restore = new version; duplicate = new screen; remove = soft delete |
 | Copy / Export, Code, Preview | standalone HTML, code view, device preview | nothing |
+| More ▾ Share (⌥L) | a view-only link to the screen or the whole board; copy or revoke it later | a row in `studio_share_links` |
 
 An empty project keeps a freeform canvas (shapes, text, images) until its first screen
 exists; from then on it is a board.
@@ -399,7 +404,7 @@ main video, or mention it as "how it started".
 ## 13. Not built yet (keep off the "how it works" slides)
 
 Flows/prototype links between
-screens, comments, publish/share links, UX review, design-system import, Figma/Webflow
+screens, comments, publishing to a custom domain, invite-by-email and roles on shares, UX review, design-system import, Figma/Webflow
 export, shared vector memory across projects, enterprise SSO and team roles.
 
 ---
@@ -503,8 +508,8 @@ waiting and, if so, wakes the worker up."
 
 - Say "agents" for the Creative Director (plan) and UI Designers (build). The five-role
   pipeline belongs to older canvas projects (§11); don't present it as today's flow.
-- Don't claim real-time collaboration, comments, publishing, Figma export or shared memory
-  across projects: not built (§13).
+- Don't claim real-time collaboration, comments, publishing to a domain, Figma export or
+  shared memory across projects: not built (§13). View-only share links are built (§8).
 - The live canvas **polls** (about every 1–2 seconds); don't call it websockets.
 - The Claude Code and Codex sign-ins are local-development conveniences, not product
   features. Don't show them as ways customers connect.
@@ -535,6 +540,8 @@ waiting and, if so, wakes the worker up."
 | `GET/POST /api/studio/tasks` | task list; stop, retry, approve |
 | `POST /api/studio/agents/:role/messages` | direct chat with one agent |
 | `/api/studio/connections/*` | provider connections (ChatGPT plan, local Claude Code) |
+| `GET/POST/DELETE /api/studio/share` | list, create (or reuse) and revoke share links |
+| `GET /share/:token`, `GET /share/:token/images/:id` | public, view-only page and its images (no sign-in, `noindex`) |
 | `POST /api/worker` | drain the queue (bearer secret) |
 | `POST /api/studio/versions`, `/api/studio/canvas/*`, `/api/studio/generate` | older node-canvas projects |
 

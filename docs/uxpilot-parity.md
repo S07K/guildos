@@ -133,7 +133,7 @@ recording prompt was cancelled.
 | Save manual HTML-screen edits as a version | Done: `POST /api/studio/screens` commits a screen version |
 | Screen toolbar (preview, versions, code, export, regenerate, variations, duplicate) | Done: preview, per-screen versions with restore, code, HTML export, Variations (⌥O), Regenerate, Duplicate (⌥D), rename (double-click title), remove |
 | Desktop version of a screen | Done: Generate ▾ Desktop/Tablet/Mobile version, built beside the source |
-| Comments, publish, review, prototype, design-system import | Missing (notes and the Guild panel exist) |
+| Comments, publish, review, prototype, design-system import | Share links done (2026-11-12); comments, publishing to a domain, review, prototype and import missing |
 
 ## 3. Target experience for GuildOS
 
@@ -253,3 +253,9 @@ recording prompt was cancelled.
    - Not yet: flows between screens.
 5. **Collaboration and reach:** comments on elements, publish/share links, UX review,
    and design-system import.
+   - **Share links (done 2026-11-12):** More ▾ Share (⌥L) creates a view-only link to the
+     screen or the whole board (`/share/<token>`, no sign-in, never indexed). The token is a
+     192-bit secret stored as a SHA-256 hash plus a workspace-bound encrypted copy so the
+     owner can copy it again; one active link per scope; revoking makes it 404 at once.
+     Images are served through the link only while it is active. UX Pilot's invite-by-email
+     and roles are not built.

@@ -326,3 +326,51 @@ test('manual edit opens a full-screen editor: layers, style panel, inline text, 
  await expect(editor).toHaveCount(0);
  await expect(page.frameLocator('iframe[title="Threadline home"]').getByRole('heading', { name: 'Threadline Studio' })).toBeVisible();
 });
+
+test('a share link shows the screen to anyone signed out, until it is revoked', async ({ page, request, browser }) => {
+ await page.setViewportSize({ width: 1440, height: 1000 });
+ await page.route('https://images.unsplash.com/**', route => route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="3"/>' }));
+ await page.goto('/signin');
+ await page.getByLabel('Email address').fill('studio-test@example.com');
+ await page.getByRole('button', { name: 'Send sign-in code' }).click();
+ await page.getByLabel('Email code').fill('123456');
+ await page.getByRole('button', { name: 'Enter your studio' }).click();
+ await page.getByRole('link', { name: 'New project', exact: true }).click();
+ await page.getByLabel('Project name').fill('Threadline share');
+ await page.getByLabel('Your creative brief').fill('A mobile app for a small clothing shop selling linen and wool basics.');
+ await page.getByRole('button', { name: 'Create project', exact: true }).click();
+ await expect(page).toHaveURL(/\/studio\/projects\/[0-9a-f-]{36}$/);
+ const projectId = new URL(page.url()).pathname.split('/').at(-1)!;
+ const sections = await Promise.all(['app-header', 'hero'].map(async kind => ({ id: kind, kind, intent: `The ${kind}.`, status: 'ready', html: await fixture(kind) })));
+ const screen = { kind: 'html-screen', name: 'Threadline home', device: 'mobile', background: '#fbfaf7', tokens: { colors: { primary: '#1f3d36', accent: '#d9a441', ink: '#1b1f24', muted: '#6b7280', surface: '#f3f1ec', line: '#e5e2da' }, fontSans: 'Inter' }, sections };
+ await request.post('http://127.0.0.1:3199/testing/screen', { data: { project_id: projectId, document: screen } });
+ await page.reload();
+ const frame = page.locator('iframe[title="Threadline home"]');
+ await expect(page.frameLocator('iframe[title="Threadline home"]').getByRole('heading', { name: 'Threadline' })).toBeVisible();
+ const box = (await frame.boundingBox())!;
+ await page.mouse.click(box.x + box.width / 2, box.y + 60);
+ const toolbar = page.getByRole('toolbar', { name: 'Threadline home toolbar' });
+ await expect(toolbar).toBeVisible();
+ await page.keyboard.press('Alt+KeyL');
+
+ const dialog = page.getByRole('dialog', { name: 'Share' });
+ await dialog.getByRole('button', { name: 'Create link' }).click();
+ const url = await dialog.getByRole('textbox', { name: 'Share link' }).inputValue();
+ expect(url).toMatch(/\/share\/[A-Za-z0-9_-]{32}$/);
+ await expect(dialog.getByRole('list', { name: 'Active links' })).toContainText('Threadline home');
+
+ // A signed-out visitor sees the screen, view only, and the page is never indexed.
+ const visitor = await browser.newContext({ ignoreHTTPSErrors: true });
+ const viewer = await visitor.newPage();
+ await viewer.goto(url);
+ await expect(viewer.getByRole('heading', { name: 'Threadline home' })).toBeVisible();
+ await expect(viewer.frameLocator('iframe[title="Threadline home"]').getByRole('heading', { name: 'Layers made for slow mornings' })).toBeVisible();
+ await expect(viewer.locator('meta[name="robots"]')).toHaveAttribute('content', /noindex/);
+
+ // Revoking stops the link at once.
+ await dialog.getByRole('button', { name: 'Revoke link to Threadline home' }).click();
+ await expect(dialog.getByRole('button', { name: 'Create link' })).toBeVisible();
+ const revoked = await viewer.goto(url);
+ expect(revoked?.status()).toBe(404);
+ await visitor.close();
+});

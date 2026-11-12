@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { randomUUID, createHash } from 'node:crypto';
 const user = { id: '00000000-0000-4000-8000-000000000001', email: 'studio-test@example.com', aud: 'authenticated', role: 'authenticated', app_metadata: {}, user_metadata: {}, created_at: new Date().toISOString() };
 const token = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url') + '.' + Buffer.from(JSON.stringify({ sub: user.id, session_id:'00000000-0000-4000-8000-000000000002', exp: Math.floor(Date.now()/1000)+3600, role: 'authenticated' })).toString('base64url') + '.fixture-signature';
-const tables = { studio_workspaces: [], studio_projects: [], studio_keys: [], studio_versions: [], studio_screens: [], studio_screen_versions: [], studio_agent_notes: [], studio_agent_messages: [], studio_canvas_commits: [], studio_tasks: [], studio_openrouter_keys: [], studio_groq_keys: [], studio_anthropic_keys: [], studio_trial_runs: [], studio_task_events: [], studio_task_subtasks: [], studio_generation_limits: [], studio_pipeline_drafts: [] };
+const tables = { studio_workspaces: [], studio_projects: [], studio_keys: [], studio_versions: [], studio_screens: [], studio_screen_versions: [], studio_share_links: [], studio_agent_notes: [], studio_agent_messages: [], studio_canvas_commits: [], studio_tasks: [], studio_openrouter_keys: [], studio_groq_keys: [], studio_anthropic_keys: [], studio_trial_runs: [], studio_task_events: [], studio_task_subtasks: [], studio_generation_limits: [], studio_pipeline_drafts: [] };
 const storageFiles=new Set();
 let failedStorageDeletes=0;
 let projectReadDelay=null;
