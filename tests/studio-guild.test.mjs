@@ -51,7 +51,12 @@ test('guild follows the five-stage pipeline and returns only the QA-approved tur
  assert.deepEqual(result.notes.map(note=>note.author_role),['ux_architect','creative_director','ui_designer','copywriter','qa_critic']);
  assert.equal(result.input_tokens,50);assert.equal(result.output_tokens,25);
  assert.equal(result.document.nodes.find(node=>node.id==='cta').text,'Book a visit');assert.ok(result.document.nodes.every(node=>node.flow));
- for(const call of calls.slice(0,4))assert.deepEqual(call.text.format.schema,calls[1].text.format.schema);
+ // Each stage's schema encodes its permissions: structure and Direction emit containers only,
+ // Copywriting only text controls; the UI stage keeps the full component contract.
+ const nodeTypes=call=>call.text.format.schema.properties.upsert_nodes.items.properties.type.enum;
+ assert.deepEqual(nodeTypes(calls[0]),['container']);assert.deepEqual(nodeTypes(calls[1]),['container']);
+ assert.deepEqual(nodeTypes(calls[3]),['text','button','input']);assert.ok(nodeTypes(calls[2]).length>3);
+ assert.deepEqual(calls[1].text.format.schema.properties.mode,calls[2].text.format.schema.properties.mode);
 });
 
 test('Groq guild requests omit the unsupported store parameter',async()=>{

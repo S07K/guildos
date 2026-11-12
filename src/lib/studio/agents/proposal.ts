@@ -15,7 +15,7 @@ import { componentProposalSchema, canvasToComponent, componentToCanvas, parseCom
 import { uiIconNames, uiIconSemantics } from '../ui-icons.ts';
 import { activeScreenId, screenDocument, screenRoot, validateScreenEdits } from '../screen-scope.ts';
 
-import { pipelineRoles, stageInstructions, validateStageEdit, normalizeStageEdit, alignStageCommands, pipelineIssues, type PipelineState, type PipelineIssue } from './pipeline.ts';
+import { pipelineRoles, stageInstructions, stageProposalSchema, scopeStageProposal, validateStageEdit, normalizeStageEdit, alignStageCommands, pipelineIssues, type PipelineState, type PipelineIssue } from './pipeline.ts';
 import { ProviderFailure, requestAgentResponse } from './provider-request.ts';
 export { ProviderFailure } from './provider-request.ts';
 
@@ -124,7 +124,7 @@ async function proposeCanvasWorkAttempt(input: {key:string;model:string;role:Age
 Design skills:
 ${designSkillPrompt(input.role,input.instruction)}${repair?` Your previous proposal failed validation: ${repairReason}. Return a corrected compact proposal for only this action.`:''}`,
   input:JSON.stringify({execution_mode:input.pipeline?.executionMode,target_layer_id:input.pipeline?.targetLayerId,locked_subtree_id:input.pipeline?.revisionScope?.sectionId,active_screen_id:targetScreenId||null,instruction:input.instruction,brief:input.brief,current_canvas:agentCanvasDocument(activeDocument),new_screen_transition:!!input.pipeline?.newScreenTransition,archived_screen_roots:input.document.nodes.filter(node=>!node.parentId&&(node.screen||node.type==='frame')&&node.id!==targetScreenId).map(({id,name})=>({id,name})),previous_screen_summary:previousScreenSummary,archived_layer_ids:input.document.nodes.filter(node=>screenRoot(input.document,node.id)?.id!==targetScreenId).map(node=>node.id),permanently_deleted_layer_ids:input.document.deletedIds||[],design_tokens:designTokens,rendering_issues:[...canvasQualityIssues(activeDocument),...(input.role==='qa_critic'?screenCompositionIssues(activeDocument):[])],properties_panel_fix_tickets:input.feedbackTickets||[],pipeline_corrections:input.pipeline?.issues||[],image_connector:{name:unsplashSearchTool.name,configured:unsplashConfigured(),photos:input.images||[],instructions:'Use only exact returned imageUrl values; the backend retains attribution metadata. Never add visible photo-credit labels, captions or links to the product UI. If unconfigured, reuse uploaded assets or omit photography.'},available_icons:uiIconNames,icon_dictionary:uiIconSemantics,recent_discussion:input.notes}),
-  text:{format:{type:'json_schema',name:'canvas_proposal',strict:true,schema:input.pipeline?{...proposalSchema,properties:{...proposalSchema.properties,handoff:{type:'null'},stage_complete:{type:'boolean'}},required:[...proposalSchema.required,'stage_complete']}:proposalSchema}}};
+  text:{format:{type:'json_schema',name:'canvas_proposal',strict:true,schema:input.pipeline?stageProposalSchema(input.pipeline,{...proposalSchema,properties:{...proposalSchema.properties,handoff:{type:'null'},stage_complete:{type:'boolean'}},required:[...proposalSchema.required,'stage_complete']}):proposalSchema}}};
  devAgentLog('agent_input',{provider,model:input.model,agent_name:specialist.name,agent_persona:specialist.persona,role:input.role,stage:input.pipeline?input.pipeline.stage+1:undefined,action:input.pipeline?input.pipeline.action+1:undefined,repair,repair_reason:repair?repairReason:undefined,request:requestBody});
  let response:Response;
  try { response=await requestAgentResponse(provider,request,{
@@ -165,7 +165,9 @@ ${designSkillPrompt(input.role,input.instruction)}${repair?` Your previous propo
    const {stage_complete,...edits}=proposal as Record<string,unknown>;
    if(Array.isArray(edits.upsert_nodes)&&edits.upsert_nodes.some((node:any)=>node.type==='container'&&!['VERTICAL','HORIZONTAL'].includes(node.layoutMode)))throw new Error('Every structural container requires an explicit layoutMode.');
    if(typeof stage_complete!=='boolean')throw new Error('The pipeline requires stage_complete boolean.');
-   stageComplete=stage_complete;proposal=edits;
+   const scoped=scopeStageProposal(input.pipeline,edits);
+   if(scoped.dropped.length)devAgentLog('stage_scope_dropped',{role:input.role,stage:input.pipeline.stage+1,dropped:scoped.dropped});
+   stageComplete=stage_complete;proposal=scoped.proposal;
   }
   const explicitLayer=targetScreenId?resolveLayerReference(input.document,input.instruction,targetScreenId):undefined;
   const revisionScope=input.pipeline?.revisionScope||(targetScreenId&&screenRoot(input.document,targetScreenId)&&(explicitLayer||isRevisionRequest(input.instruction))?{rootId:targetScreenId,sectionId:explicitLayer||resolveRevisionScope(input.document,targetScreenId,input.instruction).sectionId,snapshot:structuredClone(input.document),allowSectionDelete:!!explicitLayer&&/\b(remove|delete)\b/i.test(input.instruction)}:undefined);

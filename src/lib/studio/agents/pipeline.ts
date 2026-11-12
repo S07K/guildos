@@ -78,6 +78,47 @@ export function alignStageCommands(base:CanvasDocument,commands:CanvasCommand[],
   return Object.keys(patch).length?[{type:'update',id:command.id,patch}]:[];
  });
 }
+/** Existing node IDs a stage may edit; null means the stage may create structure or components. */
+export function stageEditableIds(state:PipelineState):string[]|null {
+ const nodes=screenDocument(state.document,state.targetScreenId).nodes;
+ if(state.stage===1)return nodes.filter(node=>node.type==='container').map(node=>node.id);
+ if(state.stage===3)return nodes.filter(node=>['text','button','input'].includes(node.type)).map(node=>node.id);
+ return null;
+}
+const stageNodeTypes:Partial<Record<number,string[]>>={0:['container'],1:['container'],3:['text','button','input']};
+/**
+ * Encodes stage permissions in the structured-output schema itself, so a constrained provider
+ * cannot emit a node type or ID outside the stage's remit (e.g. Direction restyling a chip).
+ */
+export function stageProposalSchema<T extends {properties:Record<string,any>}>(state:PipelineState,base:T):T {
+ const schema=structuredClone(base);
+ const item=schema.properties.upsert_nodes?.items;
+ if(!item?.properties)return schema;
+ const types=stageNodeTypes[state.stage];
+ if(types)item.properties.type={type:'string',enum:types};
+ const ids=stageEditableIds(state);
+ if(ids?.length)item.properties.id={type:'string',enum:ids};
+ return schema;
+}
+/**
+ * Providers without constrained decoding can still return out-of-remit operations. Drop them
+ * before validation (stages 1 and 3 never create or delete; stage 0 only builds containers)
+ * instead of failing the whole run; validateStageEdit still guards the result.
+ */
+export function scopeStageProposal(state:PipelineState,proposal:Record<string,unknown>):{proposal:Record<string,unknown>;dropped:string[]} {
+ if(!Array.isArray(proposal.upsert_nodes))return {proposal,dropped:[]};
+ const ids=stageEditableIds(state),allowedIds=ids&&new Set(ids),types=stageNodeTypes[state.stage];
+ const dropped:string[]=[];
+ const upsert_nodes=proposal.upsert_nodes.filter((node:any)=>{
+  const keep=(!allowedIds||allowedIds.has(node?.id))&&(!types||types.includes(node?.type));
+  if(!keep)dropped.push(String(node?.id));
+  return keep;
+ });
+ const deletes=Array.isArray(proposal.delete_ids)?proposal.delete_ids:[];
+ const delete_ids=state.stage===1||state.stage===3?[]:deletes;
+ if(delete_ids!==deletes)dropped.push(...deletes.map(id=>`delete:${String(id)}`));
+ return {proposal:{...proposal,upsert_nodes,delete_ids},dropped};
+}
 export function validateStageEdit(state:PipelineState,after:CanvasDocument) {
  if(state.revisionScope)assertRevisionScope(state.revisionScope,after);
  const before=new Map(state.document.nodes.map(node=>[node.id,node]));
