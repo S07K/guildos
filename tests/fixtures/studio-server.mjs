@@ -92,7 +92,7 @@ const server = createServer(async (req, res) => {
   const now = new Date().toISOString();
   let task = tables.studio_tasks.find(row => row.id === body.task_id);
   if (!task) { task = { id: body.task_id, project_id: project.id, workspace_id: project.workspace_id, parent_task_id: null, agent_role: 'ui_designer', instruction: 'Design the home screen', status: 'running', created_at: now }; tables.studio_tasks.push(task); }
-  Object.assign(task, { status: body.status || 'running', updated_at: now });
+  Object.assign(task, { status: body.status || 'running', updated_at: now }, body.instruction ? { instruction: body.instruction } : {});
   tables.studio_pipeline_drafts = tables.studio_pipeline_drafts.filter(row => row.task_id !== task.id);
   tables.studio_pipeline_drafts.push({ task_id: task.id, project_id: project.id, workspace_id: project.workspace_id, state: body.state, updated_at: now });
   return send({ ok: true });

@@ -268,6 +268,7 @@ export function parseScreenScope(text: string): ScreenScope | null {
 }
 export const isScreenScope = (value: unknown): value is ScreenScope => !!value && typeof value === 'object' && ['section', 'add'].includes((value as ScreenScope).mode) && sectionId.test(String((value as ScreenScope).sectionId)) && ((value as ScreenScope).path === undefined || elementPath.test(String((value as ScreenScope).path)));
 /** Removes every invisible GuildOS marker (layer, scope, screen, device) from request text. */
+/** Removes every invisible routing marker (screen, scope, device, layer); use it wherever a request is shown. */
 export const stripScreenScope = (text: string) => text.replace(/\n?\u2063guildos-[a-z]+:[^\u2063]*\u2063/g, '');
 
 /** Which screen a request is about; absent means "add a new screen to the board". */

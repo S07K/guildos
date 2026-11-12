@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { stripScreenScope } from '@/lib/studio/html-screen';
 import { Alert, Box, Button, Stack, Typography } from '@mui/material';
 import { type AgentRole } from '@/lib/studio/agent-roles';
 import { AgentMark } from './agent-identity';
@@ -84,7 +85,7 @@ export function AgentProgress({projectId,onRequestChanges,onTaskWaits,onWorkingA
   <Box aria-live="polite" aria-relevant="additions">
    {reviews.map(task=><Box key={task.id} component="section" aria-label="Changes ready for approval" sx={{mb:2,p:2,border:'1px solid',borderColor:'divider',borderRadius:2,bgcolor:'background.paper',minWidth:0}}>
     <Stack direction="row" spacing={1} sx={{alignItems:'center',mb:1}}><AgentMark role={task.agent_role} size={28}/><Typography variant="subtitle2" sx={{fontWeight:700,flex:1}}>Changes ready for review</Typography></Stack>
-    <Typography variant="body2" sx={{fontWeight:600,mb:.75,overflowWrap:'anywhere'}}>{task.instruction}</Typography>
+    <Typography variant="body2" sx={{fontWeight:600,mb:.75,overflowWrap:'anywhere'}}>{stripScreenScope(task.instruction)}</Typography>
     <Typography variant="body2" color="text.secondary" sx={{lineHeight:1.55,overflowWrap:'anywhere'}}>{summaryFor(task)}</Typography>
     <Stack direction="row" sx={{mt:1.5,gap:1,flexWrap:'wrap'}}><Button size="small" variant="contained" disabled={!!pending} onClick={()=>void action(task,'approve')}>Approve changes</Button>{onRequestChanges&&<Button size="small" variant="outlined" disabled={!!pending} onClick={()=>requestChanges(task)}>Request changes</Button>}</Stack>
    </Box>)}

@@ -28,7 +28,7 @@ test('a section draft renders live: the agent cursor works over pending sections
   sections: kinds.map(kind => ({ id: kind, kind, intent: `The ${kind}.`, status: ready.includes(kind) ? 'ready' : 'planned', html: ready.includes(kind) ? html[kind] : '' })),
  });
  const taskId = randomUUID();
- const live = (ready: string[], status = 'running') => request.post('http://127.0.0.1:3199/testing/live', { data: { project_id: projectId, task_id: taskId, status, state: { kind: 'sections', phase: 'build', screenId: null, baseVersionId: null, attempts: {}, document: screen(ready) } } });
+ const live = (ready: string[], status = 'running', instruction?: string) => request.post('http://127.0.0.1:3199/testing/live', { data: { project_id: projectId, task_id: taskId, status, instruction, state: { kind: 'sections', phase: 'build', screenId: null, baseVersionId: null, attempts: {}, document: screen(ready) } } });
 
  await live(['app-header']);
  const frame = page.frameLocator('iframe[title="Threadline home"]');
@@ -53,8 +53,9 @@ test('a section draft renders live: the agent cursor works over pending sections
 
  // When the task is finished there is no live draft and the cursor leaves.
  // The worker publishes the finished screen onto the board when the task completes; the board picks it up.
- await request.post('http://127.0.0.1:3199/testing/screen', { data: { project_id: projectId, document: screen(['app-header', 'hero']) } });
- await live(['app-header', 'hero'], 'review');
+ const published = await (await request.post('http://127.0.0.1:3199/testing/screen', { data: { project_id: projectId, document: screen(['app-header', 'hero']) } })).json();
+ // The stored request carries invisible routing markers; the review card must never show them.
+ await live(['app-header', 'hero'], 'review', `Tighten the hero spacing\n\u2063guildos-screen:${published.id}\u2063\u2063guildos-scope:section:hero:div%3Anth-child(1)\u2063`);
  await expect(cursor).toHaveCount(0);
  await expect(frame.getByRole('heading', { name: 'Layers made for slow mornings' })).toBeVisible({ timeout: 10000 });
 
@@ -87,21 +88,14 @@ test('a section draft renders live: the agent cursor works over pending sections
  await expect(page.getByLabel('Selected element properties')).toContainText('in section hero');
  await expect(page.getByLabel('Selected element properties')).toContainText('Shop the edit');
 
- // The composer turns the selection into a scoped request: Section edit by default, Add section, or Global edit.
+ // The composer shows the selection as a scope toggle and a context chip with a live thumbnail; hovering shows a larger preview.
  await page.getByRole('button', { name: 'Project conversation' }).click();
  const scope = page.getByRole('group', { name: 'Edit scope' });
  await expect(scope.getByRole('button', { name: 'Section edit' })).toHaveAttribute('aria-pressed', 'true');
  await expect(page.getByText(/Changes only hero/)).toBeVisible();
- const sent = page.waitForRequest(request => request.url().endsWith('/api/studio/notes') && request.method() === 'POST');
- await page.getByPlaceholder(/Ask for changes/).fill('Make this button rust');
- await page.getByRole('button', { name: 'Send message' }).click();
- const payload = JSON.parse((await sent).postData()!);
- expect(payload.screenScope).toEqual({ mode: 'section', sectionId: 'hero', path: expect.stringMatching(/nth-child/) });
- expect(payload.screenId).toMatch(/^[0-9a-f-]{36}$/);
  await scope.getByRole('button', { name: 'Add section' }).click();
  await expect(page.getByText('Adds a new section after hero.')).toBeVisible();
-
- // The selection appears as a context chip with a live thumbnail; hovering shows a larger preview; × clears it.
+ await scope.getByRole('button', { name: 'Section edit' }).click();
  const chip = page.getByTestId('selection-context');
  await expect(chip).toContainText('hero');
  await expect(chip.locator('iframe[title="Selection thumbnail"]')).toHaveCount(1);
@@ -109,9 +103,31 @@ test('a section draft renders live: the agent cursor works over pending sections
  const card = page.getByRole('tooltip', { name: 'Selection preview' });
  await expect(card).toBeVisible();
  await expect(card.frameLocator('iframe[title="Selection preview"]').getByText('Shop the edit')).toBeVisible();
- await page.getByRole('button', { name: 'Remove selected context' }).click();
+
+ // The review card shows the request without its routing markers.
+ const review = page.getByRole('region', { name: 'Changes ready for approval' });
+ await expect(review).toContainText('Tighten the hero spacing');
+ await expect(review).not.toContainText('guildos-');
+
+ // Sending turns the selection into a scoped request, then clears the selection.
+ const sent = page.waitForRequest(request => request.url().endsWith('/api/studio/notes') && request.method() === 'POST');
+ await page.getByPlaceholder(/Ask for changes/).fill('Make this button rust');
+ await page.getByRole('button', { name: 'Send message' }).click();
+ const payload = JSON.parse((await sent).postData()!);
+ expect(payload.screenScope).toEqual({ mode: 'section', sectionId: 'hero', path: expect.stringMatching(/nth-child/) });
+ expect(payload.screenId).toBe(published.id);
  await expect(chip).toHaveCount(0);
  await expect(page.locator('[data-screen-selection]')).toHaveCount(0);
+
+ // Request changes goes back to the reviewed screen and section, with no selection needed.
+ await review.getByRole('button', { name: 'Request changes' }).click();
+ const revision = page.waitForRequest(request => request.url().endsWith('/api/studio/notes') && request.method() === 'POST');
+ await page.getByPlaceholder(/Ask for changes/).fill('A little more space');
+ await page.getByRole('button', { name: 'Send message' }).click();
+ const revised = JSON.parse((await revision).postData()!);
+ expect(revised).toMatchObject({ screenId: published.id, screenScope: { mode: 'section', sectionId: 'hero' } });
+ expect(revised.text).toContain('Revise the completed work for: Tighten the hero spacing');
+ expect(revised.text).not.toContain('guildos-');
 });
 
 test('manual edit opens a full-screen editor: layers, style panel, inline text, blocks, undo and save', async ({ page, request }) => {

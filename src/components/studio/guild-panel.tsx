@@ -15,6 +15,7 @@ import { ConversationSkeleton } from './loading-states';
 import Link from 'next/link';
 import type { TrialStatus } from '@/lib/studio/trial';
 import type { SelectionPreview } from './html-screen-frame';
+import { isScreenScope, parseScreenScope, parseScreenTarget, stripScreenScope } from '@/lib/studio/html-screen';
 import { SelectionThumbnail } from './selection-preview';
 
 /** An element picked on an HTML screen; the composer offers Section edit, Add section or Global edit for it. */
@@ -48,7 +49,8 @@ export function GuildPanel({ projectId, versionId, layers: layerOptions = [], in
  const [stoppedTask, setStoppedTask] = useState<StoppedTask|null>(null);
  const [stopping, setStopping] = useState(false);
  const [taskWaits, setTaskWaits] = useState<WaitingMessage[]>([]);
- const [reviewFeedback, setReviewFeedback] = useState<ReviewFeedback|null>(null);
+ // Request changes keeps the reviewed work's target (screen, and section if it was a section edit).
+ const [reviewFeedback, setReviewFeedback] = useState<(ReviewFeedback & { screenId: string | null; screenScope: ReturnType<typeof parseScreenScope> })|null>(null);
  const [composerContext, setComposerContext] = useState(selectedContext);
  const [targetLayerId, setTargetLayerId] = useState<string|null>(selectedContext?.id||null);
  const [scopeMode, setScopeMode] = useState<ScopeMode>('section');
@@ -113,7 +115,7 @@ export function GuildPanel({ projectId, versionId, layers: layerOptions = [], in
  }, []);
 
  function requestChanges(feedback: ReviewFeedback) {
-  setReviewFeedback(feedback); setComposerContext(null); setTargetLayerId(feedback.instruction.match(/\u2063guildos-layer:([a-z0-9-]{1,80})\u2063/i)?.[1]||null); setText('');
+  setReviewFeedback({ ...feedback, instruction: stripScreenScope(feedback.instruction).trim(), screenId: parseScreenTarget(feedback.instruction), screenScope: parseScreenScope(feedback.instruction) }); setComposerContext(null); setTargetLayerId(feedback.instruction.match(/\u2063guildos-layer:([a-z0-9-]{1,80})\u2063/i)?.[1]||null); setText('');
   requestAnimationFrame(() => inputRef.current?.focus());
  }
  function resolveLayerMention(value:string) {
@@ -158,8 +160,13 @@ export function GuildPanel({ projectId, versionId, layers: layerOptions = [], in
   const mention = agentRoles.find(role => new RegExp(`@${agentIdentity[role].persona}\\b`, 'i').test(message)) || null;
   sending.current = true; setSaving(true); setError('');
   try {
-   const screenScope = screenTarget?.sectionId && scopeMode !== 'global' ? { mode: scopeMode, sectionId: screenTarget.sectionId, ...(scopeMode === 'section' && screenTarget.path ? { path: screenTarget.path } : {}) } : undefined;
-   const payload = JSON.stringify({ projectId, versionId: reviewFeedback?.versionId || versionId, anchor: 'page', mentionedRole: mention, targetLayerId:screenTarget?undefined:targetLayerId||explicitLayer, screenId: screenTarget?.screenId, screenScope, text: message, displayMessage: draftMessage });
+   const selectedScope = screenTarget?.sectionId && scopeMode !== 'global' ? { mode: scopeMode, sectionId: screenTarget.sectionId, ...(scopeMode === 'section' && screenTarget.path ? { path: screenTarget.path } : {}) } : undefined;
+   // A selection on the board wins; otherwise a revision goes back to the screen (and section) it reviewed.
+   const screenId = screenTarget?.screenId ?? reviewFeedback?.screenId ?? undefined;
+   const reviewScope = reviewFeedback?.screenScope;
+   // Revising an added section re-plans the screen rather than adding another one.
+   const screenScope = screenTarget ? selectedScope : isScreenScope(reviewScope) && reviewScope.mode === 'section' ? reviewScope : undefined;
+   const payload = JSON.stringify({ projectId, versionId: reviewFeedback?.versionId || versionId, anchor: 'page', mentionedRole: mention, targetLayerId:screenId?undefined:targetLayerId||explicitLayer, screenId, screenScope, text: message, displayMessage: draftMessage });
    if (pendingMessage.current?.payload !== payload) pendingMessage.current = {payload,requestId:crypto.randomUUID()};
    const response = await fetch('/api/studio/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({...JSON.parse(payload),requestId:pendingMessage.current.requestId}) });
    const data = await conversationData(response);
@@ -167,6 +174,8 @@ export function GuildPanel({ projectId, versionId, layers: layerOptions = [], in
    pendingMessage.current = null;
    setNotes(items => [...items.filter(item => item.id !== data.note.id), data.note]); setText(''); setReviewFeedback(null); setMentionQuery(null); setLayerQuery(null);
    window.dispatchEvent(new Event('guildos:tasks-updated'));
+   // The request carries its own scope, so the selection is done once it is sent.
+   if (screenTarget) onClearScreenTarget?.();
   } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not send this message.'); }
   finally { sending.current = false; setSaving(false); }
  }
