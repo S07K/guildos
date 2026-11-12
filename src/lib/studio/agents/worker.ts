@@ -12,8 +12,8 @@ import { agentIdentity, type AgentRole } from '../agent-roles.ts';
 import { initialPipeline, PipelineGateError, pipelineRoles, advanceDraft, rejectOrApprove, type PipelineState } from './pipeline.ts';
 import { proposeCanvasWork, auditPipeline, ProviderFailure } from './proposal.ts';
 import { trialConfig, claimTrialRun, releaseTrialRun, trialExhaustedMessage,noModelMessage } from '../trial.ts';
-import { isHtmlScreen, parseDeviceVersion, parseScreenScope, parseScreenTarget, stripScreenScope, type HtmlScreenDocument } from '../html-screen.ts';
-import { applyPlan, completeSection, deviceVersionState, failSection, initialSectionState, nextBatch, scopedSectionState, settle, usesSectionPipeline, type SectionPipelineState } from './section-pipeline.ts';
+import { isHtmlScreen, parseDeviceVersion, parseScreenScope, parseScreenTarget, parseVariation, stripScreenScope, type HtmlScreenDocument } from '../html-screen.ts';
+import { applyPlan, applyVariationLook, completeSection, deviceVersionState, variationState, failSection, initialSectionState, nextBatch, scopedSectionState, settle, usesSectionPipeline, type SectionPipelineState } from './section-pipeline.ts';
 import { buildSection, planScreen, SectionFailure, type SectionConnection } from './section-agents.ts';
 import { defaultImageModel, generateScreenImages, type ImageConnection } from './screen-images.ts';
 import { assetUrl, storeProjectImage } from '../project-assets.ts';
@@ -255,8 +255,9 @@ async function initialState(ctx:SectionStepContext):Promise<SectionPipelineState
  const target=(await boardScreens(ctx)).find(screen=>screen.id===screenId);
  const document=target?await loadScreenDocument(ctx,target.head_version_id):null;
  if(!target||!document)throw new Error('That screen is no longer on the board. Select it again before sending the request.');
- const device=parseDeviceVersion(instruction),scope=parseScreenScope(instruction);
+ const device=parseDeviceVersion(instruction),scope=parseScreenScope(instruction),variation=parseVariation(instruction);
  if(device)return deviceVersionState({id:target.id,x:target.x,y:target.y,document},device);
+ if(variation)return variationState({id:target.id,headVersionId:target.head_version_id!,document},variation);
  if(scope)return scopedSectionState(target.id,target.head_version_id!,document,scope,stripScreenScope(instruction).trim());
  return initialSectionState(target.id,target.head_version_id);
 }
@@ -288,13 +289,17 @@ async function runSectionStep(ctx:SectionStepContext) {
  if(state.phase==='plan'){
   ctx.setRole('creative_director');
   // Re-planning an existing screen keeps its look; a new screen borrows the board's look.
+  // A variation plans only a new look for the source screen, which it keeps the sections and photos of.
+  const variation=state.edit?.mode==='variation'?state.edit:null;
+  const source=variation?await loadScreenDocument(ctx,variation.sourceVersionId):null;
+  if(variation&&!source){await ctx.blocked('The screen to vary is no longer available.');return;}
   const previous=state.screenId?await loadScreenDocument(ctx,state.baseVersionId):null;
-  const styleReference=state.screenId?null:await loadScreenDocument(ctx,(await boardScreens(ctx)).find(screen=>screen.head_version_id)?.head_version_id??null);
-  await event('status',previous?`Re-planning ${previous.name}.`:'Planning a new screen: theme tokens and sections.');
-  const plan=await ctx.withProviderFallback(connection=>planScreen(connection,{brief:ctx.brief,instruction:request,previous,styleReference,notes:ctx.notes,signal:abort.signal}));
-  let screen=plan.screen;
+  const styleReference=state.screenId||source?null:await loadScreenDocument(ctx,(await boardScreens(ctx)).find(screen=>screen.head_version_id)?.head_version_id??null);
+  await event('status',source?`Exploring a different look for ${source.name}.`:previous?`Re-planning ${previous.name}.`:'Planning a new screen: theme tokens and sections.');
+  const plan=await ctx.withProviderFallback(connection=>planScreen(connection,{brief:ctx.brief,instruction:request,previous,styleReference,variation:source&&variation?{source,index:variation.index}:undefined,notes:ctx.notes,signal:abort.signal}));
+  let screen=source&&variation?applyVariationLook(source,plan.screen,variation.index):plan.screen;
   const usage={model:plan.model,input_tokens:plan.input_tokens,output_tokens:plan.output_tokens};
-  if(screen.art?.images.length){
+  if(!source&&screen.art?.images.length){
    await event('status',`Generating ${screen.art.images.length} photos: ${screen.art.direction}`);
    const store=async(bytes:Uint8Array)=>assetUrl(task.project_id,(await storeProjectImage(client,{workspaceId:task.workspace_id,projectId:task.project_id},bytes)).id);
    const images=await generateScreenImages(screen.art,{connection:ctx.imageConnection,store,signal:abort.signal,onProgress:message=>event('status',message)});
@@ -311,7 +316,7 @@ async function runSectionStep(ctx:SectionStepContext) {
   const screen=state.document!,plan=state.edit;
   await Promise.all(batch.map(async section=>{
    try {
-    const edit=plan?.mode==='device'?{sourceHtml:plan.sources[section.id],sourceDevice:plan.sourceDevice}:plan&&plan.sectionId===section.id?plan:undefined;
+    const edit=plan?.mode==='device'?{sourceHtml:plan.sources[section.id],sourceDevice:plan.sourceDevice}:plan&&'sectionId' in plan&&plan.sectionId===section.id?plan:undefined;
     const built=await ctx.withProviderFallback(connection=>buildSection(connection,{brief:ctx.brief,instruction:request,screen,sectionId:section.id,edit,signal:abort.signal}));
     await checkpoint(current=>completeSection(current,section.id,built.html),'ui_designer',{...built,summary:`${section.id}: ${built.summary}`});
    } catch(error) {
@@ -332,7 +337,7 @@ async function runSectionStep(ctx:SectionStepContext) {
   return;
  }
  const edit=finished.edit,name=finished.document!.name;
- const summary=edit?.mode==='device'?`Created ${name}.`:edit?`${edit.mode==='add'?'Added':'Updated'} the ${edit.sectionId} section of ${name}.`:finished.screenId?`${name} was re-planned: ${ready} of ${sections.length} sections built.`:`${name} is ready for review: ${ready} of ${sections.length} sections built.`;
+ const summary=edit?.mode==='device'||edit?.mode==='variation'?`Created ${name}.`:edit?`${edit.mode==='add'?'Added':'Updated'} the ${edit.sectionId} section of ${name}.`:finished.screenId?`${name} was re-planned: ${ready} of ${sections.length} sections built.`:`${name} is ready for review: ${ready} of ${sections.length} sections built.`;
  // A lease that stopped after the final checkpoint resumes straight at publishing.
  if(state.phase!=='done'&&!await checkpoint(()=>finished,'ui_designer',{summary,model:ctx.activeModel(),input_tokens:0,output_tokens:0}))return;
  const saved=await ctx.finish({mode:'edit',summary,document:finished.document,commands:[],expectedVersionId:finished.baseVersionId,model:ctx.recordedModel(ctx.activeModel()),input_tokens:0,output_tokens:0});

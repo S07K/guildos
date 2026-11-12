@@ -412,17 +412,48 @@ export function ProjectEditor({ project, initialVersions, initialScreens = [], i
         try{await patchScreen(screen.id,{remove:true});setScreens(items=>items.filter(item=>item.id!==screen.id));deselectScreen();}
         catch(cause){setError(cause instanceof Error?cause.message:'The screen could not be removed.');}
     }
+    const screenReference=(screen:BoardScreen)=>`#${screen.name.trim().replace(/\s+/g,'-')}`;
+    /** Queues agent work on a screen from the toolbar (device version or a variation), shown in the conversation. */
+    async function queueScreenRequest(screen:BoardScreen,text:string,scope:{deviceVersion:'mobile'|'tablet'|'desktop'}|{variation:number}){
+        const response=await fetch('/api/studio/notes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({projectId:project.id,versionId:null,anchor:'page',mentionedRole:null,text:`${screenReference(screen)} ${text}`,displayMessage:`${screenReference(screen)} ${text}`,screenId:screen.id,...scope,requestId:crypto.randomUUID()})});
+        const data=await response.json();
+        if(!response.ok)throw new Error(data.error||'Could not start this request.');
+    }
     /** Generate › Desktop/Tablet/Mobile version: agents rebuild the screen's sections for another device beside it. */
     async function requestDeviceVersion(screen:BoardScreen,device:'mobile'|'tablet'|'desktop'){
-        const text=`Create a ${device} version of ${screen.name}.`;
         try{
-            const response=await fetch('/api/studio/notes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({projectId:project.id,versionId:null,anchor:'page',mentionedRole:null,text,displayMessage:text,screenId:screen.id,deviceVersion:device,requestId:crypto.randomUUID()})});
-            const data=await response.json();
-            if(!response.ok)throw new Error(data.error||'Could not start the device version.');
+            await queueScreenRequest(screen,`Create a ${device} version.`,{deviceVersion:device});
             setLeftPanel('guild');setLeftOpen(true);window.dispatchEvent(new Event('guildos:tasks-updated'));
             setProviderNotice(`The agents are building a ${device} version of ${screen.name}.`);
         }catch(cause){setError(cause instanceof Error?cause.message:'Could not start the device version.');}
     }
+    /** Generate › Variations: two alternative looks for the screen, each a new screen on the board. */
+    async function requestVariations(screen:BoardScreen){
+        try{
+            for(const index of [1,2])await queueScreenRequest(screen,`Create variation ${index} of 2.`,{variation:index});
+            setLeftPanel('guild');setLeftOpen(true);window.dispatchEvent(new Event('guildos:tasks-updated'));
+            setProviderNotice(`The agents are designing 2 variations of ${screen.name}.`);
+        }catch(cause){setError(cause instanceof Error?cause.message:'Could not start the variations.');}
+    }
+    /** More › Duplicate: copies the screen's current design to a new screen beside the board. */
+    async function duplicateScreen(screen:BoardScreen){
+        if(!screen.document||screenSaving)return;
+        setScreenSaving(true);setError('');
+        try{
+            const name=`${screen.name.slice(0,75)} copy`;
+            const response=await fetch('/api/studio/screens',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({projectId:project.id,screenId:null,expectedVersionId:null,requestId:crypto.randomUUID(),document:{...screen.document,name},feedback:`Duplicated from ${screen.name}`})});
+            const data=await response.json();
+            if(!response.ok)throw new Error(data.error||'Could not duplicate this screen.');
+            const copy:BoardScreen={id:data.screen.id,name:data.screen.name,device:data.screen.device,x:data.screen.x,y:data.screen.y,headVersionId:data.version.id,updatedAt:data.screen.updated_at,document:data.version.document};
+            setScreens(items=>[...items,copy]);setSelectedScreenId(copy.id);setScreenSelection(null);
+        }catch(cause){setError(cause instanceof Error?cause.message:'Could not duplicate this screen.');}
+        finally{setScreenSaving(false);}
+    }
+    const renameScreen=(screenId:string,name:string)=>{
+        const previous=screens.find(item=>item.id===screenId)?.name;
+        replaceScreen({id:screenId,name});
+        void patchScreen(screenId,{name}).catch(cause=>{if(previous)replaceScreen({id:screenId,name:previous});setError(cause instanceof Error?cause.message:'The screen could not be renamed.');});
+    };
     // New screens and agent edits arrive while you work: the board refreshes quietly.
     useEffect(()=>{
         if(!boardMode)return;
@@ -711,11 +742,11 @@ export function ProjectEditor({ project, initialVersions, initialScreens = [], i
      onSectionEdit={()=>screenSelection?openComposer('section'):setError('Select an element on the screen first, then choose Section Edit.')}
      onAddSection={()=>screenSelection?openComposer('add'):setError('Select an element in the section to add after, then choose Add New Section.')}
      onManualEdit={()=>setManualEditing(true)} onHistory={()=>setRightMode('history')}
-     onDeviceVersion={device=>void requestDeviceVersion(selectedScreen,device)} onRemove={()=>setConfirmRemoveScreen(selectedScreen)}
+     onDeviceVersion={device=>void requestDeviceVersion(selectedScreen,device)} onVariations={()=>void requestVariations(selectedScreen)} onDuplicate={()=>void duplicateScreen(selectedScreen)} onRemove={()=>setConfirmRemoveScreen(selectedScreen)}
      onNotice={(message,isError)=>isError?setError(message):setProviderNotice(message)}/></Box>}
     <Box ref={canvasRef} className="canvas-scroll" onMouseDown={event=>{canvasPress.current={x:event.clientX,y:event.clientY};}} onClick={event=>{const press=canvasPress.current;canvasPress.current=null;if(!press||Math.hypot(event.clientX-press.x,event.clientY-press.y)>4)return;if(!(event.target instanceof Element&&event.target.closest('[data-screen-id]')))deselectScreen();}} sx={{cursor:panMode?'grab':'default',touchAction:'none',userSelect:'none',WebkitUserSelect:'none'}} onPointerDownCapture={event=>{pointers.current.set(event.pointerId,{x:event.clientX,y:event.clientY});if(pointers.current.size===2){const[a,b]=[...pointers.current.values()],bounds=event.currentTarget.getBoundingClientRect();pinch.current={distance:Math.hypot(a.x-b.x,a.y-b.y),zoom:zoomRef.current};recordZoomAnchor((a.x+b.x)/2-bounds.left,(a.y+b.y)/2-bounds.top);}}} onPointerMoveCapture={event=>{if(!pointers.current.has(event.pointerId))return;pointers.current.set(event.pointerId,{x:event.clientX,y:event.clientY});if(pinch.current&&pointers.current.size===2){const[a,b]=[...pointers.current.values()],bounds=event.currentTarget.getBoundingClientRect(),next=Math.max(10,Math.min(300,pinch.current.zoom*Math.hypot(a.x-b.x,a.y-b.y)/pinch.current.distance));recordZoomAnchor((a.x+b.x)/2-bounds.left,(a.y+b.y)/2-bounds.top);zoomRef.current=next;setZoom(next);event.stopPropagation();}}} onPointerUpCapture={event=>{pointers.current.delete(event.pointerId);pinch.current=null;}} onPointerCancelCapture={()=>{pointers.current.clear();pinch.current=null;}} onPointerDown={event=>{const target=event.target as Element;const blankCanvasDrag=isCanvas(draft)&&tool==='select'&&!target.closest('[data-node-id]');if(!panMode&&!blankCanvasDrag&&event.button!==1)return;if(event.button!==0&&event.button!==1)return;event.preventDefault();const el=event.currentTarget;drag.current={x:event.clientX,y:event.clientY,left:el.scrollLeft,top:el.scrollTop};el.setPointerCapture(event.pointerId);}} onPointerMove={event=>{if(!drag.current)return;event.currentTarget.scrollLeft=drag.current.left-(event.clientX-drag.current.x);event.currentTarget.scrollTop=drag.current.top-(event.clientY-drag.current.y);}} onPointerUp={()=>{drag.current=null;}} onPointerCancel={()=>{drag.current=null;}}>
      <Box className="canvas-content"><Box sx={{width:workspaceWidth*zoom/100,height:workspaceHeight*zoom/100,position:'relative',flex:'none'}}><Box className="design-artboard" sx={{width:workspaceWidth,height:workspaceHeight,transform:`scale(${zoom/100})`,...(canvasDocument||boardMode?{background:'transparent',boxShadow:'none'}:{})}}>
-     {boardMode?<BoardView projectId={project.id} screens={screens} draft={boardDraft} zoom={zoom} selectedScreenId={selectedScreenId} selection={screenSelection} onSelect={(screenId,selection)=>{if(screenId!==selectedScreenId)setScreenSelection(null);setSelectedScreenId(screenId);setScreenSelection(selection);if(selection)setRightMode('properties');}} onMove={moveScreen}/>:canvasDocument?<CanvasSurface document={canvasDocument} projectId={project.id} tool={tool} framePreset={framePresetSize} selected={nodeId} agentCursor={canvasPreview?.status==='running'?{role:canvasPreview.role,nodeIds:canvasPreview.nodeIds}:undefined} onSelect={id=>{setNodeId(id);setRightMode(id||canvasDocument.nodes.some(node=>!node.hidden&&(node.screen||node.type==='frame'))?'properties':null);}} onChange={setDraft} onCommit={commitCanvas} onToolChange={setTool} onGeometryChange={setSelectedGeometry} disabled={!!visiblePipelinePreview||saving||uploadingImage}/>:draft?<iframe title="Generated landing page" srcDoc={previewHtml} sandbox="" referrerPolicy="no-referrer" style={{height:artboardHeight,pointerEvents:'none'}}/>:null}
+     {boardMode?<BoardView projectId={project.id} screens={screens} draft={boardDraft} zoom={zoom} selectedScreenId={selectedScreenId} selection={screenSelection} onSelect={(screenId,selection)=>{if(screenId!==selectedScreenId)setScreenSelection(null);setSelectedScreenId(screenId);setScreenSelection(selection);if(selection)setRightMode('properties');}} onMove={moveScreen} onRename={renameScreen}/>:canvasDocument?<CanvasSurface document={canvasDocument} projectId={project.id} tool={tool} framePreset={framePresetSize} selected={nodeId} agentCursor={canvasPreview?.status==='running'?{role:canvasPreview.role,nodeIds:canvasPreview.nodeIds}:undefined} onSelect={id=>{setNodeId(id);setRightMode(id||canvasDocument.nodes.some(node=>!node.hidden&&(node.screen||node.type==='frame'))?'properties':null);}} onChange={setDraft} onCommit={commitCanvas} onToolChange={setTool} onGeometryChange={setSelectedGeometry} disabled={!!visiblePipelinePreview||saving||uploadingImage}/>:draft?<iframe title="Generated landing page" srcDoc={previewHtml} sandbox="" referrerPolicy="no-referrer" style={{height:artboardHeight,pointerEvents:'none'}}/>:null}
      </Box></Box></Box>
     </Box>
     <Paper className="editor-tool-dock" elevation={8} role="toolbar" aria-label="Design tools" sx={{position:'absolute',bottom:24,left:'50%',transform:'translateX(-50%)',zIndex:5,p:.75,borderRadius:1.5,bgcolor:'#24282e',border:'1px solid #3a424a',boxShadow:'0 10px 34px #121b2755',display:'flex',alignItems:'center',gap:.35,maxWidth:'calc(100% - 24px)',overflowX:'auto'}}>

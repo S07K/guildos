@@ -68,7 +68,7 @@ const server = createServer(async (req, res) => {
   if (body.p_screen && !screen) return send({status:'not_found'});
   if ((screen?.head_version_id || null)!==body.p_expected) return send({status:'conflict',currentVersionId:screen?.head_version_id || null});
   const now = new Date().toISOString();
-  if (!screen) { screen = {id:randomUUID(),project_id:project.id,workspace_id:project.workspace_id,name:body.p_document.name,device:body.p_document.device,x:body.p_x ?? 0,y:body.p_y ?? 0,head_version_id:null,deleted_at:null,created_at:now,updated_at:now}; tables.studio_screens.push(screen); }
+  if (!screen) { screen = {id:randomUUID(),project_id:project.id,workspace_id:project.workspace_id,name:body.p_document.name,device:body.p_document.device,x:body.p_x ?? tables.studio_screens.filter(row=>row.project_id===project.id&&!row.deleted_at).reduce((right,row)=>Math.max(right,row.x+({mobile:375,tablet:768,desktop:1440}[row.device]||375)+160),0),y:body.p_y ?? 0,head_version_id:null,deleted_at:null,created_at:now,updated_at:now}; tables.studio_screens.push(screen); }
   const version = {id:randomUUID(),screen_id:screen.id,project_id:project.id,workspace_id:project.workspace_id,document:body.p_document,feedback:body.p_feedback,model:body.p_model,input_tokens:body.p_input,output_tokens:body.p_output,created_at:now};
   tables.studio_screen_versions.push(version);
   Object.assign(screen,{head_version_id:version.id,name:body.p_document.name,updated_at:now});

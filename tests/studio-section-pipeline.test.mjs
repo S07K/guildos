@@ -6,7 +6,7 @@ import { IMAGE_PLACEHOLDER } from '../src/lib/studio/html-screen.ts';
 import { applyPlan, completeSection, deviceVersionState, failSection, initialSectionState, nextBatch, scopedSectionState, settle, usesSectionPipeline } from '../src/lib/studio/agents/section-pipeline.ts';
 import { buildSection, screenFromPlan } from '../src/lib/studio/agents/section-agents.ts';
 import { generateScreenImages } from '../src/lib/studio/agents/screen-images.ts';
-import { encodeDeviceVersion, encodeScreenScope, encodeScreenTarget, parseScreenScope, stripScreenScope, validateHtmlScreen } from '../src/lib/studio/html-screen.ts';
+import { encodeDeviceVersion, encodeScreenScope, encodeScreenTarget, encodeVariation, parseScreenScope, stripScreenScope, validateHtmlScreen } from '../src/lib/studio/html-screen.ts';
 import { runNextTask } from '../src/lib/studio/agents/worker.ts';
 import { sealKey } from '../src/lib/studio/vault.mjs';
 import { adapter, studioDatabase } from './fixtures/studio-db.mjs';
@@ -274,4 +274,44 @@ test('device versions keep content, art and photos and refuse the same device', 
  assert.equal(state.edit.sources.hero, '<div class="px-5">hero</div>');
  assert.equal(state.document.art.images[0].url, '/api/studio/assets/a?projectId=p', 'photos are reused, not regenerated');
  assert.throws(() => deviceVersionState({ id: 's1', x: 0, y: 0, document: screen }, 'mobile'), /already a mobile screen/);
+});
+
+test('a variation plans only a new look and rebuilds the source sections with its photos', async t => {
+ const db = await studioDatabase(); const alice = randomUUID(); const secret = 'f'.repeat(64);
+ const priorSecret = process.env.STUDIO_VAULT_KEY; process.env.STUDIO_VAULT_KEY = secret;
+ t.after(async () => { if (priorSecret === undefined) delete process.env.STUDIO_VAULT_KEY; else process.env.STUDIO_VAULT_KEY = priorSecret; await db.close(); });
+ await db.query('insert into auth.users values($1)', [alice]);
+ const workspace = (await db.query('insert into studio_workspaces(owner_id) values($1) returning id', [alice])).rows[0].id;
+ const project = (await db.query("insert into studio_projects(workspace_id,name,brief,cta_url) values($1,'Shop','A mobile app for a small clothing shop selling linen and wool basics','https://example.com') returning id", [workspace])).rows[0].id;
+ await db.query('insert into studio_keys(workspace_id,ciphertext,suffix) values($1,$2,$3)', [workspace, sealKey('test-only', workspace, secret), 'only']);
+ await db.exec('SET ROLE service_role'); const client = adapter(db);
+ const rpc = async (name, args) => { const result = await client.rpc(name, args); if (result.error) throw result.error; return result.data; };
+ const photo = { id: 'coat', section: 'hero', prompt: 'Coat', alt: 'Coat', aspect: 'portrait', url: '/api/studio/assets/a?projectId=p', source: 'generated' };
+ const source = { ...readyScreen(), art: { direction: 'Oatmeal backdrop.', recipes: {}, images: [photo] } };
+ const seeded = await rpc('commit_studio_screen', { p_project: project, p_workspace: workspace, p_actor: alice, p_request_id: randomUUID(), p_screen: null, p_expected: null, p_document: source, p_feedback: 'Generated', p_model: 'test', p_input: 0, p_output: 0, p_x: null, p_y: null });
+ const calls = [];
+ t.mock.method(globalThis, 'fetch', async (url, options) => {
+  const body = JSON.parse(options.body); const input = JSON.parse(body.input);
+  calls.push({ name: body.text.format.name, variation: input.variation_of, direction: input.variation_direction, id: input.this_section?.id, variationMode: body.instructions.includes('VARIATION MODE') });
+  if (body.text.format.name === 'screen_plan') return Response.json(responses({ ...plan, screen_name: 'Something else', colors: [{ name: 'primary', hex: '#7a1f2b' }], sections: [{ id: 'other', kind: 'hero', intent: 'A different section.' }], images: [{ id: 'new', section_id: 'other', prompt: 'New photo', alt: '', aspect: 'square' }] }));
+  return Response.json(responses({ summary: 'Done.', html: `<div class="px-5 bg-primary">${input.this_section.id} varied</div>` }));
+ });
+ await rpc('enqueue_studio_task', { p_project: project, p_actor: alice, p_request: randomUUID(), p_text: `Variation\n${encodeScreenTarget(seeded.screen.id)}${encodeVariation(2)}`, p_role: 'ui_designer', p_version: null });
+ for (let step = 0; step < 4; step++) await runNextTask(client);
+
+ const plans = calls.filter(call => call.name === 'screen_plan');
+ assert.equal(plans.length, 1);
+ assert.ok(plans[0].variationMode);
+ assert.deepEqual(plans[0].variation.sections.map(section => section.id), ['top', 'hero', 'list']);
+ assert.match(plans[0].direction, /minimal/, 'the second variation leans quieter');
+ assert.deepEqual(calls.filter(call => call.name === 'screen_section').map(call => call.id).sort(), ['hero', 'list', 'top'], 'the source sections are rebuilt, not the planned ones');
+ assert.ok(!calls.some(call => call.name === undefined), 'no photo is generated');
+
+ const board = (await db.query('select s.name,s.device,v.document from studio_screens s join studio_screen_versions v on v.id=s.head_version_id where s.project_id=$1 order by s.created_at', [project])).rows;
+ assert.equal(board.length, 2, 'the source is untouched and the variation is a new screen');
+ const variation = board[1];
+ assert.equal(variation.name, 'Shop home · Variation 2');
+ assert.equal(variation.document.tokens.colors.primary, '#7a1f2b', 'the new look comes from the plan');
+ assert.deepEqual(variation.document.art.images, [photo], 'photos are reused');
+ assert.equal(variation.document.art.direction, 'Oatmeal backdrop.');
 });

@@ -4,7 +4,7 @@ import { scheduleWorker } from '@/lib/studio/worker-trigger';
 import { adminClient, authConfig, sessionClient } from '@/lib/studio/supabase';
 import { agentIdentity, agentRoles } from '@/lib/studio/agent-roles';
 import { encodeLayerReference } from '@/lib/studio/revision-scope';
-import { encodeDeviceVersion, encodeScreenScope, encodeScreenTarget, isScreenScope, stripScreenScope } from '@/lib/studio/html-screen';
+import { encodeDeviceVersion, encodeScreenScope, encodeScreenTarget, encodeVariation, isScreenScope, MAX_VARIATIONS, stripScreenScope } from '@/lib/studio/html-screen';
 
 export const runtime = 'nodejs';
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -71,13 +71,13 @@ export async function POST(request: Request) {
  const client = await sessionClient();
  const { data: { user } } = await studioUser(client);
  if (!user) return json({ error: 'Your session expired. Sign in again.' }, 401);
- let body: { projectId?: unknown; versionId?: unknown; anchor?: unknown; mentionedRole?: unknown; targetLayerId?:unknown; screenScope?: unknown; screenId?: unknown; deviceVersion?: unknown; text?: unknown; displayMessage?: unknown; requestId?: unknown };
+ let body: { projectId?: unknown; versionId?: unknown; anchor?: unknown; mentionedRole?: unknown; targetLayerId?:unknown; screenScope?: unknown; screenId?: unknown; deviceVersion?: unknown; variation?: unknown; text?: unknown; displayMessage?: unknown; requestId?: unknown };
  try {
   const raw = await request.text();
   if (raw.length > 16000) return json({ error: 'Comment is too long.' }, 413);
   body = JSON.parse(raw);
  } catch { return json({ error: 'Invalid comment.' }, 400); }
- if (!body || typeof body.displayMessage !== 'string' || !body.displayMessage.trim() || body.displayMessage.length > 2000 || typeof body.requestId !== 'string' || !uuid.test(body.requestId) || typeof body.projectId !== 'string' || !uuid.test(body.projectId) || typeof body.text !== 'string' || !body.text.trim() || body.text.length > 2000 || (body.screenScope !== undefined && !isScreenScope(body.screenScope)) || (body.screenId !== undefined && (typeof body.screenId !== 'string' || !uuid.test(body.screenId))) || (body.deviceVersion !== undefined && !['mobile', 'tablet', 'desktop'].includes(String(body.deviceVersion))) || ((body.screenScope !== undefined || body.deviceVersion !== undefined) && body.screenId === undefined) || body.targetLayerId!==undefined&&(typeof body.targetLayerId!=='string'||!/^[a-z0-9-]{1,80}$/i.test(body.targetLayerId)) || !anchors.includes(String(body.anchor)) || (body.mentionedRole !== null && body.mentionedRole !== undefined && !agentRoles.includes(body.mentionedRole as typeof agentRoles[number])) || (body.versionId && (typeof body.versionId !== 'string' || !uuid.test(body.versionId)))) return json({ error: 'Invalid comment.' }, 400);
+ if (!body || typeof body.displayMessage !== 'string' || !body.displayMessage.trim() || body.displayMessage.length > 2000 || typeof body.requestId !== 'string' || !uuid.test(body.requestId) || typeof body.projectId !== 'string' || !uuid.test(body.projectId) || typeof body.text !== 'string' || !body.text.trim() || body.text.length > 2000 || (body.screenScope !== undefined && !isScreenScope(body.screenScope)) || (body.screenId !== undefined && (typeof body.screenId !== 'string' || !uuid.test(body.screenId))) || (body.deviceVersion !== undefined && !['mobile', 'tablet', 'desktop'].includes(String(body.deviceVersion))) || (body.variation !== undefined && (!Number.isInteger(body.variation) || (body.variation as number) < 1 || (body.variation as number) > MAX_VARIATIONS)) || ([body.screenScope, body.deviceVersion, body.variation].filter(value => value !== undefined).length > 1) || ((body.screenScope !== undefined || body.deviceVersion !== undefined || body.variation !== undefined) && body.screenId === undefined) || body.targetLayerId!==undefined&&(typeof body.targetLayerId!=='string'||!/^[a-z0-9-]{1,80}$/i.test(body.targetLayerId)) || !anchors.includes(String(body.anchor)) || (body.mentionedRole !== null && body.mentionedRole !== undefined && !agentRoles.includes(body.mentionedRole as typeof agentRoles[number])) || (body.versionId && (typeof body.versionId !== 'string' || !uuid.test(body.versionId)))) return json({ error: 'Invalid comment.' }, 400);
  const project = await projectFor(client, body.projectId);
  if (!project) return json({ error: 'Project not found.' }, 404);
  if (body.versionId) {
@@ -90,7 +90,7 @@ export async function POST(request: Request) {
   if (!screen) return json({ error: 'That screen is no longer on the board.' }, 404);
  }
  const markers = typeof body.screenId === 'string'
-  ? encodeScreenTarget(body.screenId) + (isScreenScope(body.screenScope) ? encodeScreenScope(body.screenScope) : body.deviceVersion ? encodeDeviceVersion(body.deviceVersion as 'mobile') : '')
+  ? encodeScreenTarget(body.screenId) + (isScreenScope(body.screenScope) ? encodeScreenScope(body.screenScope) : body.deviceVersion ? encodeDeviceVersion(body.deviceVersion as 'mobile') : typeof body.variation === 'number' ? encodeVariation(body.variation) : '')
   : typeof body.targetLayerId === 'string' ? encodeLayerReference(body.targetLayerId) : '';
  const { data, error } = await adminClient().rpc('enqueue_studio_task', {
   p_project: project.id, p_actor: user.id, p_request: body.requestId,

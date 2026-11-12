@@ -10,7 +10,8 @@ type SectionPhase = 'plan' | 'build' | 'done';
 /** A scoped edit: the section being revised (with its previous markup) or the section being added. */
 export type SectionEdit =
  | { mode: ScreenScope['mode']; sectionId: string; path?: string; previousHtml?: string }
- | { mode: 'device'; sourceScreenId: string; sourceDevice: HtmlScreenDocument['device']; sources: Record<string, string> };
+ | { mode: 'device'; sourceScreenId: string; sourceDevice: HtmlScreenDocument['device']; sources: Record<string, string> }
+ | { mode: 'variation'; sourceScreenId: string; sourceVersionId: string; index: number };
 /**
  * screenId: the board screen this draft updates; null creates a new screen at `position`.
  * baseVersionId: that screen's head version when the work started (null for new screens).
@@ -44,6 +45,26 @@ export function deviceVersionState(source: { id: string; x: number; y: number; d
   kind: 'sections', phase: 'build', screenId: null, baseVersionId: null, attempts: {}, position: { x: source.x + width + 160, y: source.y },
   edit: { mode: 'device', sourceScreenId: source.id, sourceDevice: source.document.device, sources: Object.fromEntries(ready.map(section => [section.id, section.html])) },
   document: { ...source.document, name: `${source.document.name.replace(/ · (Mobile|Tablet|Desktop)$/, '').slice(0, 68)} · ${label}`, device, sections: ready.map(section => ({ ...section, html: '', status: 'planned', error: undefined })) },
+ };
+}
+
+/**
+ * A variation: a new screen planned afresh for its look only. It keeps the source's sections
+ * and photos (applied after the plan), so the variation differs in style, not in content.
+ */
+export function variationState(source: { id: string; headVersionId: string; document: HtmlScreenDocument }, index: number): SectionPipelineState {
+ if (!source.document.sections.some(section => section.status === 'ready')) throw new Error('This screen has no finished sections to vary yet.');
+ return { kind: 'sections', phase: 'plan', screenId: null, baseVersionId: null, document: null, attempts: {}, edit: { mode: 'variation', sourceScreenId: source.id, sourceVersionId: source.headVersionId, index } };
+}
+
+/** Puts a variation's new look on the source's sections and photos. */
+export function applyVariationLook(source: HtmlScreenDocument, look: HtmlScreenDocument, index: number): HtmlScreenDocument {
+ return {
+  ...look,
+  name: `${source.name.replace(/ · Variation \d+$/, '').slice(0, 64)} · Variation ${index}`,
+  device: source.device,
+  sections: source.sections.filter(section => section.status === 'ready').map(section => ({ ...section, html: '', status: 'planned', error: undefined })),
+  art: { direction: source.art?.direction ?? look.art?.direction ?? '', recipes: look.art?.recipes ?? source.art!.recipes, images: source.art?.images ?? [] },
  };
 }
 

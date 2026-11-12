@@ -279,6 +279,12 @@ export const encodeDeviceVersion = (device: HtmlDevice) => `\u2063guildos-device
 export const parseScreenTarget = (text: string) => SCREEN_MARKER.exec(text)?.[1]?.toLowerCase() ?? null;
 export const parseDeviceVersion = (text: string) => (DEVICE_MARKER.exec(text)?.[1] as HtmlDevice | undefined) ?? null;
 
+/** Generate › Variations: which alternative (1-based) of the targeted screen this request builds. */
+export const MAX_VARIATIONS = 3;
+const VARIATION_MARKER = /\u2063guildos-variation:([1-3])\u2063/;
+export const encodeVariation = (index: number) => `\u2063guildos-variation:${index}\u2063`;
+export const parseVariation = (text: string) => { const match = VARIATION_MARKER.exec(text); return match ? Number(match[1]) : null; };
+
 /**
  * Validates a screen saved from the manual editor and re-sanitises every section
  * (inline styles allowed). Throws with the first problem, phrased for the user.

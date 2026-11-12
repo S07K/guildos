@@ -160,7 +160,7 @@ test('manual edit opens a full-screen editor: layers, style panel, inline text, 
  const toolbar = page.getByRole('toolbar', { name: 'Threadline home toolbar' });
  await expect(toolbar).toHaveCount(0);
  // The screen moves when side panels open, so it is measured before every click.
- const clickScreen = async () => { const frameBox = (await page.locator('iframe[title="Threadline home"]').boundingBox())!; await page.mouse.click(frameBox.x + frameBox.width / 2, frameBox.y + 60); };
+ const clickScreen = async () => { await page.locator('iframe[title="Threadline home"]').scrollIntoViewIfNeeded(); const frameBox = (await page.locator('iframe[title="Threadline home"]').boundingBox())!; await page.mouse.click(frameBox.x + frameBox.width / 2, frameBox.y + 60); };
  await clickScreen();
  await expect(toolbar).toBeVisible();
  const canvasBox = (await page.locator('.canvas-scroll').boundingBox())!;
@@ -191,11 +191,37 @@ test('manual edit opens a full-screen editor: layers, style panel, inline text, 
  // Generate › Desktop version asks the agents for the same screen at another width.
  await toolbar.getByRole('button', { name: 'Generate' }).hover();
  const generateMenu = page.getByRole('menu', { name: 'Generate' });
- await expect(generateMenu.getByRole('menuitem')).toHaveText([/Desktop version/, /Tablet version/]);
+ await expect(generateMenu.getByRole('menuitem')).toHaveText([/Variations/, /Desktop version/, /Tablet version/]);
  const deviceRequest = page.waitForRequest(request => request.url().endsWith('/api/studio/notes') && request.method() === 'POST');
  await generateMenu.getByRole('menuitem', { name: /Desktop version/ }).click();
- expect(JSON.parse((await deviceRequest).postData()!)).toMatchObject({ deviceVersion: 'desktop', screenId: expect.stringMatching(/^[0-9a-f-]{36}$/) });
+ const device = JSON.parse((await deviceRequest).postData()!);
+ expect(device).toMatchObject({ deviceVersion: 'desktop', screenId: expect.stringMatching(/^[0-9a-f-]{36}$/), displayMessage: '#Threadline-home Create a desktop version.' });
+
+ // Generate › Variations (⌥O) queues two alternative looks of the same screen.
+ const variationRequests: Record<string, unknown>[] = [];
+ page.on('request', request => { if (request.url().endsWith('/api/studio/notes') && request.method() === 'POST' && JSON.parse(request.postData()!).variation) variationRequests.push(JSON.parse(request.postData()!)); });
  await expect(toolbar).toBeVisible();
+ await page.keyboard.press('Alt+KeyO');
+ await expect.poll(() => variationRequests.length).toBe(2);
+ expect(variationRequests.map(request => [request.variation, request.screenId])).toEqual([[1, device.screenId], [2, device.screenId]]);
+
+ // More › Duplicate copies the current design to a new screen and selects it.
+ await toolbar.getByRole('button', { name: 'More' }).hover();
+ await page.getByRole('menu', { name: 'More' }).getByRole('menuitem', { name: /Duplicate/ }).click();
+ await expect(page.locator('iframe[title="Threadline home copy"]')).toBeVisible();
+ await expect(page.getByRole('toolbar', { name: 'Threadline home copy toolbar' })).toBeVisible();
+
+ // Double-clicking a title renames the screen.
+ const copyTitle = page.getByRole('button', { name: 'Threadline home copy: drag to move' });
+ await copyTitle.scrollIntoViewIfNeeded();
+ const renamed = page.waitForRequest(request => request.url().endsWith('/api/studio/screens') && request.method() === 'PATCH');
+ await copyTitle.dblclick();
+ const nameInput = page.getByRole('textbox', { name: 'Screen name' });
+ await nameInput.fill('Threadline sale');
+ await nameInput.press('Enter');
+ expect(JSON.parse((await renamed).postData()!)).toMatchObject({ name: 'Threadline sale' });
+ await expect(page.getByRole('button', { name: 'Threadline sale: drag to move' })).toBeVisible();
+ await page.keyboard.press('Escape');
  await clickScreen();
  await toolbar.getByRole('button', { name: 'Edit' }).hover();
  const editMenu = page.getByRole('menu', { name: 'Edit' });

@@ -62,10 +62,10 @@ const iconButton = (label: string, icon: ReactNode, onClick: () => void, disable
  * The floating toolbar above a screen on the board: prompt edits (global, section, add),
  * Manual Edit, copy/export, preview, code and version history. Menus open on hover.
  */
-export function ScreenToolbar({ projectId, document: screen, busy, onGlobalEdit, onSectionEdit, onAddSection, onManualEdit, onHistory, onDeviceVersion, onRemove, onNotice }: {
+export function ScreenToolbar({ projectId, document: screen, busy, onGlobalEdit, onSectionEdit, onAddSection, onManualEdit, onHistory, onDeviceVersion, onVariations, onDuplicate, onRemove, onNotice }: {
  projectId: string; document: HtmlScreenDocument; busy: boolean;
  onGlobalEdit: () => void; onSectionEdit: () => void; onAddSection: () => void; onManualEdit: () => void; onHistory: () => void;
- onDeviceVersion: (device: 'mobile' | 'tablet' | 'desktop') => void; onRemove: () => void; onNotice: (message: string, error?: boolean) => void;
+ onDeviceVersion: (device: 'mobile' | 'tablet' | 'desktop') => void; onVariations: () => void; onDuplicate: () => void; onRemove: () => void; onNotice: (message: string, error?: boolean) => void;
 }) {
  const [preview, setPreview] = useState<{ html: string; device: string } | null>(null);
  const [code, setCode] = useState<{ html: string; filename: string } | null>(null);
@@ -88,13 +88,13 @@ export function ScreenToolbar({ projectId, document: screen, busy, onGlobalEdit,
  const openCode = run(async () => { const { html, filename } = await compose(true); setCode({ html, filename: filename || 'screen.html' }); });
 
  // ⌥ shortcuts, matching the menu labels. event.code keeps them working on macOS, where ⌥ changes the typed character.
- const handlers = useRef({ onGlobalEdit, onSectionEdit, onAddSection, onManualEdit, copyHtml });
- handlers.current = { onGlobalEdit, onSectionEdit, onAddSection, onManualEdit, copyHtml };
+ const handlers = useRef({ onGlobalEdit, onSectionEdit, onAddSection, onManualEdit, onVariations, onDuplicate, copyHtml });
+ handlers.current = { onGlobalEdit, onSectionEdit, onAddSection, onManualEdit, onVariations, onDuplicate, copyHtml };
  useEffect(() => {
   const onKey = (event: KeyboardEvent) => {
    const target = event.target as HTMLElement | null;
    if (!event.altKey || event.metaKey || event.ctrlKey || busy || (target && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable))) return;
-   const action = event.shiftKey ? { KeyH: handlers.current.copyHtml }[event.code] : { KeyG: handlers.current.onGlobalEdit, KeyS: handlers.current.onSectionEdit, KeyM: handlers.current.onManualEdit, KeyA: handlers.current.onAddSection }[event.code];
+   const action = event.shiftKey ? { KeyH: handlers.current.copyHtml }[event.code] : { KeyG: handlers.current.onGlobalEdit, KeyS: handlers.current.onSectionEdit, KeyM: handlers.current.onManualEdit, KeyA: handlers.current.onAddSection, KeyO: handlers.current.onVariations, KeyD: handlers.current.onDuplicate }[event.code];
    if (action) { event.preventDefault(); action(); }
   };
   window.addEventListener('keydown', onKey);
@@ -104,8 +104,8 @@ export function ScreenToolbar({ projectId, document: screen, busy, onGlobalEdit,
  const width = PREVIEW_DEVICES.find(device => device.id === preview?.device)?.width || 375;
  return <>
   <Paper elevation={3} role="toolbar" aria-label={`${screen.name} toolbar`} sx={{ display: 'flex', alignItems: 'center', gap: .25, px: .75, py: .5, borderRadius: 2.5, border: '1px solid #dfe5e1' }}>
-   <HoverMenu label="Generate" icon={<Sparkles size={15}/>} actions={(['desktop', 'tablet', 'mobile'] as const).filter(device => device !== screen.device).map(device => (
-    { label: `${device[0].toUpperCase()}${device.slice(1)} version`, shortcut: device === 'mobile' ? '⌥N' : undefined, disabled: busy, onSelect: () => onDeviceVersion(device) }))}/>
+   <HoverMenu label="Generate" icon={<Sparkles size={15}/>} actions={[{ label: 'Variations', shortcut: '⌥O', disabled: busy, onSelect: onVariations }, ...(['desktop', 'tablet', 'mobile'] as const).filter(device => device !== screen.device).map(device => (
+    { label: `${device[0].toUpperCase()}${device.slice(1)} version`, shortcut: device === 'mobile' ? '⌥N' : undefined, disabled: busy, onSelect: () => onDeviceVersion(device) }))]}/>
    <HoverMenu label="Edit" icon={<Pencil size={15}/>} actions={[
     { label: 'Global Edit', shortcut: '⌥G', disabled: busy, onSelect: onGlobalEdit },
     { label: 'Section Edit', shortcut: '⌥S', disabled: busy, onSelect: onSectionEdit },
@@ -119,7 +119,7 @@ export function ScreenToolbar({ projectId, document: screen, busy, onGlobalEdit,
    <Divider orientation="vertical" flexItem sx={{ mx: .5 }}/>
    {iconButton('Preview', <Eye size={18}/>, openPreview)}
    {iconButton('Code', <Code2 size={18}/>, openCode)}
-   <HoverMenu label="More" icon={<MoreHorizontal size={16}/>} actions={[{ label: 'Version history', onSelect: onHistory }, { label: 'Remove screen', disabled: busy, onSelect: onRemove }]}/>
+   <HoverMenu label="More" icon={<MoreHorizontal size={16}/>} actions={[{ label: 'Version history', onSelect: onHistory }, { label: 'Duplicate', shortcut: '⌥D', disabled: busy, onSelect: onDuplicate }, { label: 'Remove screen', disabled: busy, onSelect: onRemove }]}/>
   </Paper>
 
   <Dialog fullScreen open={!!preview} onClose={() => setPreview(null)} slotProps={{ paper: { 'aria-label': 'Preview' } }}>

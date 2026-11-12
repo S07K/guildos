@@ -185,6 +185,7 @@ instruction (`guildos-screen`, `guildos-scope`, `guildos-device`). The user neve
 | Element selected → Section edit | screen + section | build (only that section) | new version, one section rewritten |
 | Element selected → Add section | screen + add-after | build (one new section) | new version with a section inserted |
 | Generate ▾ Desktop / Tablet / Mobile version | screen + device | build (every section, *adapt* mode) | a **new screen beside the source**, same content and photos |
+| Generate ▾ Variations | screen + variation (1, 2) | plan (look only), then build the source's sections | a **new screen** with a different palette, fonts and style, same sections and photos |
 
 **Rules worth saying out loud**
 
@@ -291,8 +292,8 @@ flowchart LR
 | Select | click a screen; click inside it to pick an element; drag a title to move | position via `PATCH /api/studio/screens` |
 | Prompt edit | the chat shows the selection as a chip; choose Section edit, Add section or Global edit | a new screen version from the agents |
 | Manual Edit (⌥M) | full-screen editor: layer tree, style panel, inline text editing, blocks, undo/redo, device widths | `POST /api/studio/screens` → new version (sanitised again on the server) |
-| Generate ▾ | Desktop / Tablet / Mobile version | a new screen beside the source |
-| More ▾ | Version history with Restore; Remove screen | restore = new version; remove = soft delete |
+| Generate ▾ | Variations (2 alternative looks) · Desktop / Tablet / Mobile version | new screens on the board |
+| More ▾ | Version history with Restore; Duplicate; Remove screen | restore = new version; duplicate = new screen; remove = soft delete |
 | Copy / Export, Code, Preview | standalone HTML, code view, device preview | nothing |
 
 An empty project keeps a freeform canvas (shapes, text, images) until its first screen
@@ -396,7 +397,7 @@ main video, or mention it as "how it started".
 
 ## 13. Not built yet (keep off the "how it works" slides)
 
-Variations and duplicate, renaming screens on the board, flows/prototype links between
+Regenerate, flows/prototype links between
 screens, comments, publish/share links, UX review, design-system import, Figma/Webflow
 export, shared vector memory across projects, enterprise SSO and team roles.
 

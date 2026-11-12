@@ -131,12 +131,29 @@ export function screenFromPlan(value: unknown): { summary: string; screen: HtmlS
  };
 }
 
-export async function planScreen(connection: SectionConnection, input: { brief: string; instruction: string; previous: HtmlScreenDocument | null; styleReference?: HtmlScreenDocument | null; notes: unknown[]; signal?: AbortSignal }): Promise<Usage & { summary: string; screen: HtmlScreenDocument }> {
+/** Directions that keep Generate › Variations distinct from the source and from each other. */
+const VARIATION_DIRECTIONS = [
+ 'Bolder and more expressive: a stronger accent colour, larger display type, higher contrast and confident shapes.',
+ 'Quieter and more minimal: a restrained palette, generous whitespace, refined typography and subtle surfaces.',
+ 'Warmer and more editorial: rich neutrals, a serif display face, magazine-like rhythm and texture.',
+];
+const VARIATION_INSTRUCTIONS = `
+
+VARIATION MODE: variation_of is an existing screen. Design an alternative LOOK for it, following variation_direction.
+Keep its device. Return its sections unchanged (same ids, kinds and intents, in the same order) and no images.
+Change the visual language: palette tokens, background, fonts and style recipes must clearly differ from variation_of.current_look.`;
+
+export async function planScreen(connection: SectionConnection, input: { brief: string; instruction: string; previous: HtmlScreenDocument | null; styleReference?: HtmlScreenDocument | null; variation?: { source: HtmlScreenDocument; index: number }; notes: unknown[]; signal?: AbortSignal }): Promise<Usage & { summary: string; screen: HtmlScreenDocument }> {
  const result = await structured(connection, {
-  name: 'screen_plan', schema: planSchema, maxOutput: 5000, signal: input.signal, instructions: PLAN_INSTRUCTIONS,
+  name: 'screen_plan', schema: planSchema, maxOutput: 5000, signal: input.signal, instructions: PLAN_INSTRUCTIONS + (input.variation ? VARIATION_INSTRUCTIONS : ''),
   input: {
    brief: input.brief.slice(0, 6000), request: input.instruction.slice(0, 4000), section_kinds: HTML_SECTION_KINDS, recent_discussion: input.notes.slice(-12),
    // A new screen on a board reuses the board's look so every screen belongs to one product.
+   ...(input.variation ? {
+    variation_of: { name: input.variation.source.name, device: input.variation.source.device, sections: input.variation.source.sections.map(({ id, kind, intent }) => ({ id, kind, intent })),
+     current_look: { tokens: input.variation.source.tokens, background: input.variation.source.background, style_recipes: input.variation.source.art?.recipes } },
+    variation_direction: VARIATION_DIRECTIONS[(input.variation.index - 1) % VARIATION_DIRECTIONS.length],
+   } : {}),
    style_reference: !input.previous && input.styleReference ? { palette: input.styleReference.tokens, background: input.styleReference.background, art_direction: input.styleReference.art?.direction, style_recipes: input.styleReference.art?.recipes } : null,
    existing_screen: input.previous ? { name: input.previous.name, tokens: input.previous.tokens, art_direction: input.previous.art?.direction, style_recipes: input.previous.art?.recipes, sections: input.previous.sections.map(({ id, kind, intent }) => ({ id, kind, intent })) } : null,
   },
