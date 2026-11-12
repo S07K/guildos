@@ -285,6 +285,11 @@ const VARIATION_MARKER = /\u2063guildos-variation:([1-3])\u2063/;
 export const encodeVariation = (index: number) => `\u2063guildos-variation:${index}\u2063`;
 export const parseVariation = (text: string) => { const match = VARIATION_MARKER.exec(text); return match ? Number(match[1]) : null; };
 
+/** Generate › Regenerate: design the targeted screen again from scratch, as its next version. */
+const REGENERATE_MARKER = '\u2063guildos-regenerate:screen\u2063';
+export const encodeRegenerate = () => REGENERATE_MARKER;
+export const parseRegenerate = (text: string) => text.includes(REGENERATE_MARKER);
+
 /**
  * Validates a screen saved from the manual editor and re-sanitises every section
  * (inline styles allowed). Throws with the first problem, phrased for the user.

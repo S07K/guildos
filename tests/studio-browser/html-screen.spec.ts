@@ -191,7 +191,7 @@ test('manual edit opens a full-screen editor: layers, style panel, inline text, 
  // Generate › Desktop version asks the agents for the same screen at another width.
  await toolbar.getByRole('button', { name: 'Generate' }).hover();
  const generateMenu = page.getByRole('menu', { name: 'Generate' });
- await expect(generateMenu.getByRole('menuitem')).toHaveText([/Variations/, /Desktop version/, /Tablet version/]);
+ await expect(generateMenu.getByRole('menuitem')).toHaveText([/Variations/, /Regenerate/, /Desktop version/, /Tablet version/]);
  const deviceRequest = page.waitForRequest(request => request.url().endsWith('/api/studio/notes') && request.method() === 'POST');
  await generateMenu.getByRole('menuitem', { name: /Desktop version/ }).click();
  const device = JSON.parse((await deviceRequest).postData()!);
@@ -204,6 +204,13 @@ test('manual edit opens a full-screen editor: layers, style panel, inline text, 
  await page.keyboard.press('Alt+KeyO');
  await expect.poll(() => variationRequests.length).toBe(2);
  expect(variationRequests.map(request => [request.variation, request.screenId])).toEqual([[1, device.screenId], [2, device.screenId]]);
+
+ // Generate › Regenerate asks for the same screen designed again from scratch.
+ const regenerateRequest = page.waitForRequest(request => request.url().endsWith('/api/studio/notes') && request.method() === 'POST' && !!JSON.parse(request.postData()!).regenerate);
+ await toolbar.getByRole('button', { name: 'Generate' }).hover();
+ await page.getByRole('menu', { name: 'Generate' }).getByRole('menuitem', { name: /Regenerate/ }).click();
+ expect(JSON.parse((await regenerateRequest).postData()!)).toMatchObject({ regenerate: true, screenId: device.screenId, displayMessage: '#Threadline-home Regenerate this screen from scratch.' });
+ await expect(toolbar).toBeVisible();
 
  // More › Duplicate copies the current design to a new screen and selects it.
  await toolbar.getByRole('button', { name: 'More' }).hover();

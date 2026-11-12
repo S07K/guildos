@@ -131,7 +131,7 @@ recording prompt was cancelled.
 | Prompt edit scoped to a section or element | Done: Section edit, Add section, Global edit per screen |
 | Manual edit mode (layers, style panel, inline text, undo/redo) | Done |
 | Save manual HTML-screen edits as a version | Done: `POST /api/studio/screens` commits a screen version |
-| Screen toolbar (preview, versions, code, export, regenerate, variations, duplicate) | Done except Regenerate: preview, per-screen versions with restore, code, HTML export, Variations (⌥O), Duplicate (⌥D), rename (double-click title), remove |
+| Screen toolbar (preview, versions, code, export, regenerate, variations, duplicate) | Done: preview, per-screen versions with restore, code, HTML export, Variations (⌥O), Regenerate, Duplicate (⌥D), rename (double-click title), remove |
 | Desktop version of a screen | Done: Generate ▾ Desktop/Tablet/Mobile version, built beside the source |
 | Comments, publish, review, prototype, design-system import | Missing (notes and the Guild panel exist) |
 
@@ -248,6 +248,8 @@ recording prompt was cancelled.
      (palette, fonts, recipes; steered "bolder" and "quieter") and rebuilds the source's
      sections with its photos, as a new screen. **Duplicate** (⌥D) copies the head version
      to a new screen without AI. Double-click a title to rename.
-   - Not yet: Regenerate, flows between screens.
+   - **Regenerate** (Generate ▾) plans the screen again from scratch (the planner sees its
+     purpose, not its look), keeps its name and device, and publishes the next version.
+   - Not yet: flows between screens.
 5. **Collaboration and reach:** comments on elements, publish/share links, UX review,
    and design-system import.

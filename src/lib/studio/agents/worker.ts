@@ -12,8 +12,8 @@ import { agentIdentity, type AgentRole } from '../agent-roles.ts';
 import { initialPipeline, PipelineGateError, pipelineRoles, advanceDraft, rejectOrApprove, type PipelineState } from './pipeline.ts';
 import { proposeCanvasWork, auditPipeline, ProviderFailure } from './proposal.ts';
 import { trialConfig, claimTrialRun, releaseTrialRun, trialExhaustedMessage,noModelMessage } from '../trial.ts';
-import { isHtmlScreen, parseDeviceVersion, parseScreenScope, parseScreenTarget, parseVariation, stripScreenScope, type HtmlScreenDocument } from '../html-screen.ts';
-import { applyPlan, applyVariationLook, completeSection, deviceVersionState, variationState, failSection, initialSectionState, nextBatch, scopedSectionState, settle, usesSectionPipeline, type SectionPipelineState } from './section-pipeline.ts';
+import { isHtmlScreen, parseDeviceVersion, parseScreenScope, parseRegenerate, parseScreenTarget, parseVariation, stripScreenScope, type HtmlScreenDocument } from '../html-screen.ts';
+import { applyPlan, applyVariationLook, completeSection, deviceVersionState, variationState, failSection, initialSectionState, nextBatch, regenerateState, scopedSectionState, settle, usesSectionPipeline, type SectionPipelineState } from './section-pipeline.ts';
 import { buildSection, planScreen, SectionFailure, type SectionConnection } from './section-agents.ts';
 import { defaultImageModel, generateScreenImages, type ImageConnection } from './screen-images.ts';
 import { assetUrl, storeProjectImage } from '../project-assets.ts';
@@ -258,6 +258,7 @@ async function initialState(ctx:SectionStepContext):Promise<SectionPipelineState
  const device=parseDeviceVersion(instruction),scope=parseScreenScope(instruction),variation=parseVariation(instruction);
  if(device)return deviceVersionState({id:target.id,x:target.x,y:target.y,document},device);
  if(variation)return variationState({id:target.id,headVersionId:target.head_version_id!,document},variation);
+ if(parseRegenerate(instruction))return regenerateState(target.id,target.head_version_id!);
  if(scope)return scopedSectionState(target.id,target.head_version_id!,document,scope,stripScreenScope(instruction).trim());
  return initialSectionState(target.id,target.head_version_id);
 }
@@ -293,11 +294,14 @@ async function runSectionStep(ctx:SectionStepContext) {
   const variation=state.edit?.mode==='variation'?state.edit:null;
   const source=variation?await loadScreenDocument(ctx,variation.sourceVersionId):null;
   if(variation&&!source){await ctx.blocked('The screen to vary is no longer available.');return;}
-  const previous=state.screenId?await loadScreenDocument(ctx,state.baseVersionId):null;
+  // Regenerate starts from a blank slate for the same screen: the planner sees its purpose, not its look.
+  const regenerate=state.edit?.mode==='regenerate';
+  const current=state.screenId?await loadScreenDocument(ctx,state.baseVersionId):null;
+  const previous=regenerate?null:current;
   const styleReference=state.screenId||source?null:await loadScreenDocument(ctx,(await boardScreens(ctx)).find(screen=>screen.head_version_id)?.head_version_id??null);
-  await event('status',source?`Exploring a different look for ${source.name}.`:previous?`Re-planning ${previous.name}.`:'Planning a new screen: theme tokens and sections.');
-  const plan=await ctx.withProviderFallback(connection=>planScreen(connection,{brief:ctx.brief,instruction:request,previous,styleReference,variation:source&&variation?{source,index:variation.index}:undefined,notes:ctx.notes,signal:abort.signal}));
-  let screen=source&&variation?applyVariationLook(source,plan.screen,variation.index):plan.screen;
+  await event('status',source?`Exploring a different look for ${source.name}.`:regenerate&&current?`Designing ${current.name} again from scratch.`:previous?`Re-planning ${previous.name}.`:'Planning a new screen: theme tokens and sections.');
+  const plan=await ctx.withProviderFallback(connection=>planScreen(connection,{brief:ctx.brief,instruction:request,previous,styleReference,variation:source&&variation?{source,index:variation.index}:undefined,regenerate:regenerate&&current?current:undefined,notes:ctx.notes,signal:abort.signal}));
+  let screen=source&&variation?applyVariationLook(source,plan.screen,variation.index):regenerate&&current?{...plan.screen,name:current.name,device:current.device}:plan.screen;
   const usage={model:plan.model,input_tokens:plan.input_tokens,output_tokens:plan.output_tokens};
   if(!source&&screen.art?.images.length){
    await event('status',`Generating ${screen.art.images.length} photos: ${screen.art.direction}`);
@@ -337,7 +341,7 @@ async function runSectionStep(ctx:SectionStepContext) {
   return;
  }
  const edit=finished.edit,name=finished.document!.name;
- const summary=edit?.mode==='device'||edit?.mode==='variation'?`Created ${name}.`:edit?`${edit.mode==='add'?'Added':'Updated'} the ${edit.sectionId} section of ${name}.`:finished.screenId?`${name} was re-planned: ${ready} of ${sections.length} sections built.`:`${name} is ready for review: ${ready} of ${sections.length} sections built.`;
+ const summary=edit?.mode==='device'||edit?.mode==='variation'?`Created ${name}.`:edit?.mode==='regenerate'?`${name} was regenerated: ${ready} of ${sections.length} sections built.`:edit?`${edit.mode==='add'?'Added':'Updated'} the ${edit.sectionId} section of ${name}.`:finished.screenId?`${name} was re-planned: ${ready} of ${sections.length} sections built.`:`${name} is ready for review: ${ready} of ${sections.length} sections built.`;
  // A lease that stopped after the final checkpoint resumes straight at publishing.
  if(state.phase!=='done'&&!await checkpoint(()=>finished,'ui_designer',{summary,model:ctx.activeModel(),input_tokens:0,output_tokens:0}))return;
  const saved=await ctx.finish({mode:'edit',summary,document:finished.document,commands:[],expectedVersionId:finished.baseVersionId,model:ctx.recordedModel(ctx.activeModel()),input_tokens:0,output_tokens:0});

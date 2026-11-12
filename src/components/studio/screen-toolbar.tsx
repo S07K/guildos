@@ -62,10 +62,10 @@ const iconButton = (label: string, icon: ReactNode, onClick: () => void, disable
  * The floating toolbar above a screen on the board: prompt edits (global, section, add),
  * Manual Edit, copy/export, preview, code and version history. Menus open on hover.
  */
-export function ScreenToolbar({ projectId, document: screen, busy, onGlobalEdit, onSectionEdit, onAddSection, onManualEdit, onHistory, onDeviceVersion, onVariations, onDuplicate, onRemove, onNotice }: {
+export function ScreenToolbar({ projectId, document: screen, busy, onGlobalEdit, onSectionEdit, onAddSection, onManualEdit, onHistory, onDeviceVersion, onVariations, onRegenerate, onDuplicate, onRemove, onNotice }: {
  projectId: string; document: HtmlScreenDocument; busy: boolean;
  onGlobalEdit: () => void; onSectionEdit: () => void; onAddSection: () => void; onManualEdit: () => void; onHistory: () => void;
- onDeviceVersion: (device: 'mobile' | 'tablet' | 'desktop') => void; onVariations: () => void; onDuplicate: () => void; onRemove: () => void; onNotice: (message: string, error?: boolean) => void;
+ onDeviceVersion: (device: 'mobile' | 'tablet' | 'desktop') => void; onVariations: () => void; onRegenerate: () => void; onDuplicate: () => void; onRemove: () => void; onNotice: (message: string, error?: boolean) => void;
 }) {
  const [preview, setPreview] = useState<{ html: string; device: string } | null>(null);
  const [code, setCode] = useState<{ html: string; filename: string } | null>(null);
@@ -104,7 +104,7 @@ export function ScreenToolbar({ projectId, document: screen, busy, onGlobalEdit,
  const width = PREVIEW_DEVICES.find(device => device.id === preview?.device)?.width || 375;
  return <>
   <Paper elevation={3} role="toolbar" aria-label={`${screen.name} toolbar`} sx={{ display: 'flex', alignItems: 'center', gap: .25, px: .75, py: .5, borderRadius: 2.5, border: '1px solid #dfe5e1' }}>
-   <HoverMenu label="Generate" icon={<Sparkles size={15}/>} actions={[{ label: 'Variations', shortcut: '⌥O', disabled: busy, onSelect: onVariations }, ...(['desktop', 'tablet', 'mobile'] as const).filter(device => device !== screen.device).map(device => (
+   <HoverMenu label="Generate" icon={<Sparkles size={15}/>} actions={[{ label: 'Variations', shortcut: '⌥O', disabled: busy, onSelect: onVariations }, { label: 'Regenerate', disabled: busy, onSelect: onRegenerate }, ...(['desktop', 'tablet', 'mobile'] as const).filter(device => device !== screen.device).map(device => (
     { label: `${device[0].toUpperCase()}${device.slice(1)} version`, shortcut: device === 'mobile' ? '⌥N' : undefined, disabled: busy, onSelect: () => onDeviceVersion(device) }))]}/>
    <HoverMenu label="Edit" icon={<Pencil size={15}/>} actions={[
     { label: 'Global Edit', shortcut: '⌥G', disabled: busy, onSelect: onGlobalEdit },

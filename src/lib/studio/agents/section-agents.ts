@@ -143,12 +143,18 @@ VARIATION MODE: variation_of is an existing screen. Design an alternative LOOK f
 Keep its device. Return its sections unchanged (same ids, kinds and intents, in the same order) and no images.
 Change the visual language: palette tokens, background, fonts and style recipes must clearly differ from variation_of.current_look.`;
 
-export async function planScreen(connection: SectionConnection, input: { brief: string; instruction: string; previous: HtmlScreenDocument | null; styleReference?: HtmlScreenDocument | null; variation?: { source: HtmlScreenDocument; index: number }; notes: unknown[]; signal?: AbortSignal }): Promise<Usage & { summary: string; screen: HtmlScreenDocument }> {
+const REGENERATE_INSTRUCTIONS = `
+
+REGENERATE MODE: regenerate_of is an existing screen the user wants designed again from scratch.
+Keep its purpose and device. Create a fresh layout and visual direction: you may restructure, rename and reorder sections. Do not imitate its previous design.`;
+
+export async function planScreen(connection: SectionConnection, input: { brief: string; instruction: string; previous: HtmlScreenDocument | null; styleReference?: HtmlScreenDocument | null; variation?: { source: HtmlScreenDocument; index: number }; regenerate?: HtmlScreenDocument; notes: unknown[]; signal?: AbortSignal }): Promise<Usage & { summary: string; screen: HtmlScreenDocument }> {
  const result = await structured(connection, {
-  name: 'screen_plan', schema: planSchema, maxOutput: 5000, signal: input.signal, instructions: PLAN_INSTRUCTIONS + (input.variation ? VARIATION_INSTRUCTIONS : ''),
+  name: 'screen_plan', schema: planSchema, maxOutput: 5000, signal: input.signal, instructions: PLAN_INSTRUCTIONS + (input.variation ? VARIATION_INSTRUCTIONS : '') + (input.regenerate ? REGENERATE_INSTRUCTIONS : ''),
   input: {
    brief: input.brief.slice(0, 6000), request: input.instruction.slice(0, 4000), section_kinds: HTML_SECTION_KINDS, recent_discussion: input.notes.slice(-12),
    // A new screen on a board reuses the board's look so every screen belongs to one product.
+   ...(input.regenerate ? { regenerate_of: { name: input.regenerate.name, device: input.regenerate.device, sections: input.regenerate.sections.map(({ kind, intent }) => ({ kind, intent })) } } : {}),
    ...(input.variation ? {
     variation_of: { name: input.variation.source.name, device: input.variation.source.device, sections: input.variation.source.sections.map(({ id, kind, intent }) => ({ id, kind, intent })),
      current_look: { tokens: input.variation.source.tokens, background: input.variation.source.background, style_recipes: input.variation.source.art?.recipes } },

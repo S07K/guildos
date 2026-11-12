@@ -414,7 +414,7 @@ export function ProjectEditor({ project, initialVersions, initialScreens = [], i
     }
     const screenReference=(screen:BoardScreen)=>`#${screen.name.trim().replace(/\s+/g,'-')}`;
     /** Queues agent work on a screen from the toolbar (device version or a variation), shown in the conversation. */
-    async function queueScreenRequest(screen:BoardScreen,text:string,scope:{deviceVersion:'mobile'|'tablet'|'desktop'}|{variation:number}){
+    async function queueScreenRequest(screen:BoardScreen,text:string,scope:{deviceVersion:'mobile'|'tablet'|'desktop'}|{variation:number}|{regenerate:true}){
         const response=await fetch('/api/studio/notes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({projectId:project.id,versionId:null,anchor:'page',mentionedRole:null,text:`${screenReference(screen)} ${text}`,displayMessage:`${screenReference(screen)} ${text}`,screenId:screen.id,...scope,requestId:crypto.randomUUID()})});
         const data=await response.json();
         if(!response.ok)throw new Error(data.error||'Could not start this request.');
@@ -434,6 +434,14 @@ export function ProjectEditor({ project, initialVersions, initialScreens = [], i
             setLeftPanel('guild');setLeftOpen(true);window.dispatchEvent(new Event('guildos:tasks-updated'));
             setProviderNotice(`The agents are designing 2 variations of ${screen.name}.`);
         }catch(cause){setError(cause instanceof Error?cause.message:'Could not start the variations.');}
+    }
+    /** Generate › Regenerate: the agents design the screen again from scratch, saved as its next version. */
+    async function regenerateScreen(screen:BoardScreen){
+        try{
+            await queueScreenRequest(screen,'Regenerate this screen from scratch.',{regenerate:true});
+            setLeftPanel('guild');setLeftOpen(true);window.dispatchEvent(new Event('guildos:tasks-updated'));
+            setProviderNotice(`The agents are designing ${screen.name} again. The current design stays in Version history.`);
+        }catch(cause){setError(cause instanceof Error?cause.message:'Could not start regenerating this screen.');}
     }
     /** More › Duplicate: copies the screen's current design to a new screen beside the board. */
     async function duplicateScreen(screen:BoardScreen){
@@ -742,7 +750,7 @@ export function ProjectEditor({ project, initialVersions, initialScreens = [], i
      onSectionEdit={()=>screenSelection?openComposer('section'):setError('Select an element on the screen first, then choose Section Edit.')}
      onAddSection={()=>screenSelection?openComposer('add'):setError('Select an element in the section to add after, then choose Add New Section.')}
      onManualEdit={()=>setManualEditing(true)} onHistory={()=>setRightMode('history')}
-     onDeviceVersion={device=>void requestDeviceVersion(selectedScreen,device)} onVariations={()=>void requestVariations(selectedScreen)} onDuplicate={()=>void duplicateScreen(selectedScreen)} onRemove={()=>setConfirmRemoveScreen(selectedScreen)}
+     onDeviceVersion={device=>void requestDeviceVersion(selectedScreen,device)} onVariations={()=>void requestVariations(selectedScreen)} onRegenerate={()=>void regenerateScreen(selectedScreen)} onDuplicate={()=>void duplicateScreen(selectedScreen)} onRemove={()=>setConfirmRemoveScreen(selectedScreen)}
      onNotice={(message,isError)=>isError?setError(message):setProviderNotice(message)}/></Box>}
     <Box ref={canvasRef} className="canvas-scroll" onMouseDown={event=>{canvasPress.current={x:event.clientX,y:event.clientY};}} onClick={event=>{const press=canvasPress.current;canvasPress.current=null;if(!press||Math.hypot(event.clientX-press.x,event.clientY-press.y)>4)return;if(!(event.target instanceof Element&&event.target.closest('[data-screen-id]')))deselectScreen();}} sx={{cursor:panMode?'grab':'default',touchAction:'none',userSelect:'none',WebkitUserSelect:'none'}} onPointerDownCapture={event=>{pointers.current.set(event.pointerId,{x:event.clientX,y:event.clientY});if(pointers.current.size===2){const[a,b]=[...pointers.current.values()],bounds=event.currentTarget.getBoundingClientRect();pinch.current={distance:Math.hypot(a.x-b.x,a.y-b.y),zoom:zoomRef.current};recordZoomAnchor((a.x+b.x)/2-bounds.left,(a.y+b.y)/2-bounds.top);}}} onPointerMoveCapture={event=>{if(!pointers.current.has(event.pointerId))return;pointers.current.set(event.pointerId,{x:event.clientX,y:event.clientY});if(pinch.current&&pointers.current.size===2){const[a,b]=[...pointers.current.values()],bounds=event.currentTarget.getBoundingClientRect(),next=Math.max(10,Math.min(300,pinch.current.zoom*Math.hypot(a.x-b.x,a.y-b.y)/pinch.current.distance));recordZoomAnchor((a.x+b.x)/2-bounds.left,(a.y+b.y)/2-bounds.top);zoomRef.current=next;setZoom(next);event.stopPropagation();}}} onPointerUpCapture={event=>{pointers.current.delete(event.pointerId);pinch.current=null;}} onPointerCancelCapture={()=>{pointers.current.clear();pinch.current=null;}} onPointerDown={event=>{const target=event.target as Element;const blankCanvasDrag=isCanvas(draft)&&tool==='select'&&!target.closest('[data-node-id]');if(!panMode&&!blankCanvasDrag&&event.button!==1)return;if(event.button!==0&&event.button!==1)return;event.preventDefault();const el=event.currentTarget;drag.current={x:event.clientX,y:event.clientY,left:el.scrollLeft,top:el.scrollTop};el.setPointerCapture(event.pointerId);}} onPointerMove={event=>{if(!drag.current)return;event.currentTarget.scrollLeft=drag.current.left-(event.clientX-drag.current.x);event.currentTarget.scrollTop=drag.current.top-(event.clientY-drag.current.y);}} onPointerUp={()=>{drag.current=null;}} onPointerCancel={()=>{drag.current=null;}}>
      <Box className="canvas-content"><Box sx={{width:workspaceWidth*zoom/100,height:workspaceHeight*zoom/100,position:'relative',flex:'none'}}><Box className="design-artboard" sx={{width:workspaceWidth,height:workspaceHeight,transform:`scale(${zoom/100})`,...(canvasDocument||boardMode?{background:'transparent',boxShadow:'none'}:{})}}>

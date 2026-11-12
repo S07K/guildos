@@ -11,7 +11,8 @@ type SectionPhase = 'plan' | 'build' | 'done';
 export type SectionEdit =
  | { mode: ScreenScope['mode']; sectionId: string; path?: string; previousHtml?: string }
  | { mode: 'device'; sourceScreenId: string; sourceDevice: HtmlScreenDocument['device']; sources: Record<string, string> }
- | { mode: 'variation'; sourceScreenId: string; sourceVersionId: string; index: number };
+ | { mode: 'variation'; sourceScreenId: string; sourceVersionId: string; index: number }
+ | { mode: 'regenerate' };
 /**
  * screenId: the board screen this draft updates; null creates a new screen at `position`.
  * baseVersionId: that screen's head version when the work started (null for new screens).
@@ -33,6 +34,9 @@ export function usesSectionPipeline(latest: unknown, draft: unknown) {
 }
 
 export const initialSectionState = (screenId: string | null, baseVersionId: string | null): SectionPipelineState => ({ kind: 'sections', phase: 'plan', screenId, baseVersionId, document: null, attempts: {} });
+
+/** Regenerate: a fresh plan for an existing screen (not shown its current look), published as its next version. */
+export const regenerateState = (screenId: string, baseVersionId: string): SectionPipelineState => ({ ...initialSectionState(screenId, baseVersionId), edit: { mode: 'regenerate' } });
 
 /** A device version: a new screen with the source's sections, art and photos, rebuilt for another width. */
 export function deviceVersionState(source: { id: string; x: number; y: number; document: HtmlScreenDocument }, device: HtmlScreenDocument['device']): SectionPipelineState {

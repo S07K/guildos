@@ -6,7 +6,7 @@ import { IMAGE_PLACEHOLDER } from '../src/lib/studio/html-screen.ts';
 import { applyPlan, completeSection, deviceVersionState, failSection, initialSectionState, nextBatch, scopedSectionState, settle, usesSectionPipeline } from '../src/lib/studio/agents/section-pipeline.ts';
 import { buildSection, screenFromPlan } from '../src/lib/studio/agents/section-agents.ts';
 import { generateScreenImages } from '../src/lib/studio/agents/screen-images.ts';
-import { encodeDeviceVersion, encodeScreenScope, encodeScreenTarget, encodeVariation, parseScreenScope, stripScreenScope, validateHtmlScreen } from '../src/lib/studio/html-screen.ts';
+import { encodeDeviceVersion, encodeScreenScope, encodeRegenerate, encodeScreenTarget, encodeVariation, parseScreenScope, stripScreenScope, validateHtmlScreen } from '../src/lib/studio/html-screen.ts';
 import { runNextTask } from '../src/lib/studio/agents/worker.ts';
 import { sealKey } from '../src/lib/studio/vault.mjs';
 import { adapter, studioDatabase } from './fixtures/studio-db.mjs';
@@ -314,4 +314,41 @@ test('a variation plans only a new look and rebuilds the source sections with it
  assert.equal(variation.document.tokens.colors.primary, '#7a1f2b', 'the new look comes from the plan');
  assert.deepEqual(variation.document.art.images, [photo], 'photos are reused');
  assert.equal(variation.document.art.direction, 'Oatmeal backdrop.');
+});
+
+test('regenerate re-plans a screen from scratch and publishes it as the same screen\'s next version', async t => {
+ const db = await studioDatabase(); const alice = randomUUID(); const secret = 'a'.repeat(64);
+ const priorSecret = process.env.STUDIO_VAULT_KEY; process.env.STUDIO_VAULT_KEY = secret;
+ t.after(async () => { if (priorSecret === undefined) delete process.env.STUDIO_VAULT_KEY; else process.env.STUDIO_VAULT_KEY = priorSecret; await db.close(); });
+ await db.query('insert into auth.users values($1)', [alice]);
+ const workspace = (await db.query('insert into studio_workspaces(owner_id) values($1) returning id', [alice])).rows[0].id;
+ const project = (await db.query("insert into studio_projects(workspace_id,name,brief,cta_url) values($1,'Shop','A mobile app for a small clothing shop selling linen and wool basics','https://example.com') returning id", [workspace])).rows[0].id;
+ await db.query('insert into studio_keys(workspace_id,ciphertext,suffix) values($1,$2,$3)', [workspace, sealKey('test-only', workspace, secret), 'only']);
+ await db.exec('SET ROLE service_role'); const client = adapter(db);
+ const rpc = async (name, args) => { const result = await client.rpc(name, args); if (result.error) throw result.error; return result.data; };
+ const seeded = await rpc('commit_studio_screen', { p_project: project, p_workspace: workspace, p_actor: alice, p_request_id: randomUUID(), p_screen: null, p_expected: null, p_document: readyScreen(), p_feedback: 'Generated', p_model: 'test', p_input: 0, p_output: 0, p_x: null, p_y: null });
+ const plans = [];
+ t.mock.method(globalThis, 'fetch', async (url, options) => {
+  const body = JSON.parse(options.body); const input = JSON.parse(body.input);
+  if (body.text.format.name === 'screen_plan') {
+   plans.push({ input, regenerate: body.instructions.includes('REGENERATE MODE') });
+   return Response.json(responses({ ...plan, screen_name: 'Renamed by the model', colors: [{ name: 'primary', hex: '#123456' }], sections: [{ id: 'fresh-hero', kind: 'hero', intent: 'A fresh hero.' }, { id: 'fresh-grid', kind: 'content', intent: 'A fresh grid.' }] }));
+  }
+  return Response.json(responses({ summary: 'Done.', html: `<div class="px-5">${input.this_section.id}</div>` }));
+ });
+ await rpc('enqueue_studio_task', { p_project: project, p_actor: alice, p_request: randomUUID(), p_text: `Regenerate\n${encodeScreenTarget(seeded.screen.id)}${encodeRegenerate()}`, p_role: 'ui_designer', p_version: null });
+ for (let step = 0; step < 3; step++) await runNextTask(client);
+
+ assert.equal(plans.length, 1);
+ assert.ok(plans[0].regenerate);
+ assert.equal(plans[0].input.existing_screen, null, 'the current look is not shown to the planner');
+ assert.equal(plans[0].input.style_reference, null);
+ assert.deepEqual(plans[0].input.regenerate_of.sections.map(section => section.intent), ['The top section.', 'The hero section.', 'The list section.']);
+ const screens = (await db.query('select id,name,head_version_id from studio_screens where project_id=$1', [project])).rows;
+ assert.equal(screens.length, 1, 'no new screen is added');
+ assert.equal(screens[0].name, 'Shop home', 'the screen keeps its name');
+ const head = (await db.query('select document from studio_screen_versions where id=$1', [screens[0].head_version_id])).rows[0].document;
+ assert.deepEqual(head.sections.map(section => section.id), ['fresh-hero', 'fresh-grid']);
+ assert.equal(head.tokens.colors.primary, '#123456');
+ assert.equal((await db.query('select count(*)::int n from studio_screen_versions where screen_id=$1', [seeded.screen.id])).rows[0].n, 2, 'the previous design stays in history');
 });
