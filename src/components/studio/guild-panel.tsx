@@ -1,11 +1,11 @@
 'use client';
 
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Avatar, Box, Button, Chip, Skeleton, IconButton, Paper, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
+import { Alert, Avatar, Box, Button, Chip, Skeleton, IconButton, Paper, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography , Tooltip } from '@mui/material';
 import { AccountContext } from './account-menu';
 import { conversationSegments } from '@/lib/studio/conversation-highlights';
 import { dropdownSurfaceSx } from './dropdown-surface';
-import { ArrowUp, Hash, Square, X } from 'lucide-react';
+import { ArrowUp, Hash, Paperclip, Square, X } from 'lucide-react';
 import { agentRoles, agentIdentity, type AgentRole, type AgentAnchor } from '@/lib/studio/agent-roles';
 import { AgentProgress, type ReviewFeedback, type StoppedTask, type WaitingMessage } from './agent-progress';
 import { AgentWorkingIndicator } from './agent-working-indicator';
@@ -17,13 +17,14 @@ import type { TrialStatus } from '@/lib/studio/trial';
 import type { SelectionPreview } from './html-screen-frame';
 import { isScreenScope, parseScreenScope, parseScreenTarget, stripScreenScope } from '@/lib/studio/html-screen';
 import { SelectionThumbnail } from './selection-preview';
+import { imageFiles, ReferenceThumbnails, useReferenceImages } from './reference-images';
 
 /** An element picked on an HTML screen; the composer offers Section edit, Add section or Global edit for it. */
 /** A selected screen, or an element in it (sectionId set): whole screens are edited globally, elements by section. */
 export type ScreenTarget = { screenId: string; screenName: string; sectionId?: string; path?: string; label: string; preview?: SelectionPreview };
 export type ScopeMode = 'section' | 'add' | 'global';
 
-export type GuildNote = { id: string; version_id: string | null; author_role: AgentRole | 'human'; mentioned_role: AgentRole | null; anchor: AgentAnchor; body: string; displayContent?: string; created_at: string };
+export type GuildNote = { id: string; version_id: string | null; author_role: AgentRole | 'human'; mentioned_role: AgentRole | null; anchor: AgentAnchor; body: string; displayContent?: string; references?: string[]; created_at: string };
 const names: Record<AgentRole | 'human', string> = { human: 'You', ...Object.fromEntries(agentRoles.map(role => [role, agentIdentity[role].persona])) } as Record<AgentRole | 'human', string>;
 const mentionPattern = /(^|\s)@([\p{L}\p{N}_-]*)$/u;
 const layerMentionPattern = /(^|\s)#([\p{L}\p{N}_ -]*)$/u;
@@ -67,6 +68,9 @@ export function GuildPanel({ projectId, versionId, layers: layerOptions = [], in
  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(0);
  const [caret, setCaret] = useState(0);
  const inputRef = useRef<HTMLTextAreaElement>(null);
+ // Reference images attached to the next message (paperclip, paste or drop).
+ const references = useReferenceImages(projectId);
+ const fileInput = useRef<HTMLInputElement>(null);
  const textOverlayRef = useRef<HTMLDivElement>(null);
  const feedRef = useRef<HTMLDivElement>(null);
  const activeOptionRef = useRef<HTMLButtonElement>(null);
@@ -152,7 +156,7 @@ export function GuildPanel({ projectId, versionId, layers: layerOptions = [], in
  }
  async function submit() {
   const draftMessage = text;
-  if (!draftMessage.trim() || saving || sending.current) return;
+  if (!draftMessage.trim() || saving || sending.current || references.uploading) return;
   // A selection is sent as a visible reference too (#section, or #Screen-name for the whole screen), so the message says what it was about.
   const targetReference = screenTarget ? `#${screenTarget.sectionId && scopeMode !== 'global' ? screenTarget.sectionId : screenTarget.screenName.trim().replace(/\s+/g, '-')}` : '';
   const shownMessage = targetReference && !draftMessage.trimStart().startsWith(targetReference) ? `${targetReference} ${draftMessage.trimStart()}` : draftMessage;
@@ -169,13 +173,13 @@ export function GuildPanel({ projectId, versionId, layers: layerOptions = [], in
    const reviewScope = reviewFeedback?.screenScope;
    // Revising an added section re-plans the screen rather than adding another one.
    const screenScope = screenTarget ? selectedScope : isScreenScope(reviewScope) && reviewScope.mode === 'section' ? reviewScope : undefined;
-   const payload = JSON.stringify({ projectId, versionId: reviewFeedback?.versionId || versionId, anchor: 'page', mentionedRole: mention, targetLayerId:screenId?undefined:targetLayerId||explicitLayer, screenId, screenScope, text: message, displayMessage: shownMessage.slice(0, 2000) });
+   const payload = JSON.stringify({ projectId, versionId: reviewFeedback?.versionId || versionId, anchor: 'page', mentionedRole: mention, targetLayerId:screenId?undefined:targetLayerId||explicitLayer, screenId, screenScope, ...(references.ids.length ? { references: references.ids } : {}), text: message, displayMessage: shownMessage.slice(0, 2000) });
    if (pendingMessage.current?.payload !== payload) pendingMessage.current = {payload,requestId:crypto.randomUUID()};
    const response = await fetch('/api/studio/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({...JSON.parse(payload),requestId:pendingMessage.current.requestId}) });
    const data = await conversationData(response);
    if (!response.ok) throw new Error(data.error || 'Could not send this message.');
    pendingMessage.current = null;
-   setNotes(items => [...items.filter(item => item.id !== data.note.id), data.note]); setText(''); setReviewFeedback(null); setMentionQuery(null); setLayerQuery(null);
+   setNotes(items => [...items.filter(item => item.id !== data.note.id), { ...data.note, ...(references.ids.length ? { references: references.ids } : {}) }]); setText(''); setReviewFeedback(null); references.clear(); setMentionQuery(null); setLayerQuery(null);
    window.dispatchEvent(new Event('guildos:tasks-updated'));
    // The request carries its own scope, so the selection is done once it is sent.
    if (screenTarget) onClearScreenTarget?.();
@@ -218,7 +222,7 @@ export function GuildPanel({ projectId, versionId, layers: layerOptions = [], in
     {note.author_role === 'human' ? <Avatar src={avatarUrl} slotProps={{img:{referrerPolicy:"no-referrer"}}} sx={{ width: 32, height: 32, fontSize: 12, fontWeight: 700, bgcolor: '#e9eef2', color: '#526374' }}>Y</Avatar> : <AgentMark role={note.author_role} size={32}/>}
     <Box sx={{ minWidth: 0, flex: 1 }}>
      <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', flexWrap: 'wrap' }}><Typography variant="body2" sx={{ fontWeight: 700 }}>{names[note.author_role]}</Typography>{note.author_role !== 'human' && <Typography variant="caption" color="text.secondary">{agentIdentity[note.author_role].name}</Typography>}<Typography variant="caption" color="text.secondary">{new Date(note.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</Typography></Stack>
-     <Paper variant="outlined" sx={{ mt: .5, px: 1.5, py: 1.15, borderRadius: '4px 14px 14px 14px', bgcolor: note.author_role === 'human' ? '#f4f7f5' : 'background.paper' }}><Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', lineHeight: 1.55 }}>{conversationSegments(messageBody(note), layerOptions.map(layer => layer.name)).map((part, index) => part.kind === 'text' ? part.text : <Box component="span" key={index} data-mention={part.kind} sx={{ color: part.role ? agentIdentity[part.role].color : '#315d43', bgcolor: part.role ? agentIdentity[part.role].tint : '#e9f1eb', borderRadius: '3px', px: .25, fontWeight: 600 }}>{part.text}</Box>)}</Typography></Paper>
+     <Paper variant="outlined" sx={{ mt: .5, px: 1.5, py: 1.15, borderRadius: '4px 14px 14px 14px', bgcolor: note.author_role === 'human' ? '#f4f7f5' : 'background.paper' }}><Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', lineHeight: 1.55 }}>{conversationSegments(messageBody(note), layerOptions.map(layer => layer.name)).map((part, index) => part.kind === 'text' ? part.text : <Box component="span" key={index} data-mention={part.kind} sx={{ color: part.role ? agentIdentity[part.role].color : '#315d43', bgcolor: part.role ? agentIdentity[part.role].tint : '#e9f1eb', borderRadius: '3px', px: .25, fontWeight: 600 }}>{part.text}</Box>)}</Typography>{note.references?.length ? <Box role="list" aria-label="Attached references" sx={{ display: 'flex', gap: .75, flexWrap: 'wrap', mt: 1 }}>{note.references.map(id => <Box role="listitem" key={id} component="a" href={`/api/studio/assets/${id}?projectId=${projectId}`} target="_blank" rel="noopener noreferrer" aria-label="Open reference image" sx={{ width: 56, height: 56, borderRadius: '8px', overflow: 'hidden', border: '1px solid #e2e7e5', bgcolor: '#fff', display: 'block' }}>{/* eslint-disable-next-line @next/next/no-img-element */}<img src={`/api/studio/assets/${id}?projectId=${projectId}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }}/></Box>)}</Box> : null}</Paper>
      {note.author_role === 'human' && taskWaits.some(item => item.noteId === note.id) && <TaskWaitNotice wait={taskWaits.find(item => item.noteId === note.id)!.wait}/>}
      {note.author_role !== 'human' && note.anchor !== 'page' && <Chip size="small" label={note.anchor} sx={{ mt: .6, height: 21, fontSize: 10 }}/>}
     </Box>
@@ -257,14 +261,17 @@ export function GuildPanel({ projectId, versionId, layers: layerOptions = [], in
       <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>{!screenTarget.sectionId || scopeMode === 'global' ? 'Re-plans this whole screen.' : scopeMode === 'section' ? `Changes only ${screenTarget.label}.` : `Adds a new section after ${screenTarget.sectionId}.`}</Typography>
      </Stack>}
      {composerContext && <Chip size="small" icon={<Hash size={14}/>} label={composerContext.name} onDelete={() => setComposerContext(null)} deleteIcon={<X size={14}/>} sx={{ alignSelf: 'flex-start', height: 26, borderRadius: '6px', bgcolor: '#3b496b', color: '#9bc8f2', '& .MuiChip-icon': { color: 'inherit', ml: .75 }, '& .MuiChip-deleteIcon': { color: 'inherit', mr: .5, '&:hover': { color: '#fff' } } }}/>}
-     <Box sx={{ minWidth: 0, position: 'relative' }}>
+     {references.images.length > 0 && <ReferenceThumbnails images={references.images} onRemove={references.remove} size={48}/>}
+     <Box sx={{ minWidth: 0, position: 'relative' }} onPaste={event => { const files = imageFiles(event.clipboardData); if (files.length) { event.preventDefault(); references.add(files); } }}>
       <Box ref={textOverlayRef} aria-hidden="true" sx={{ position: 'absolute', zIndex: 1, inset: 0, overflow: 'hidden', whiteSpace: 'pre-wrap', overflowWrap: 'break-word', wordBreak: 'break-word', pointerEvents: 'none', color: 'text.primary' }}>{highlightedMessage}</Box>
       <TextField inputRef={inputRef} fullWidth multiline minRows={3} maxRows={6} value={text} onChange={event => updateText(event.target.value, event.target.selectionStart || 0)} onScroll={event => { if (textOverlayRef.current) textOverlayRef.current.scrollTop = event.currentTarget.scrollTop; }} onClick={() => setCaret(inputRef.current?.selectionStart || 0)} onKeyUp={() => setCaret(inputRef.current?.selectionStart || 0)} onKeyDown={event => { const count = mentionQuery !== null ? suggestions.length : layerQuery !== null ? layerSuggestions.length : 0; if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && count > 0) { event.preventDefault(); setActiveSuggestionIndex(index => (index + (event.key === 'ArrowDown' ? 1 : -1) + count) % count); return; } if (event.key === 'Enter' && !event.shiftKey) { if (mentionQuery !== null) { if (suggestions[activeSuggestionIndex]) { event.preventDefault(); insertMention(suggestions[activeSuggestionIndex]); } } else if (layerQuery !== null) { if (layerSuggestions[activeSuggestionIndex]) { event.preventDefault(); insertLayer(layerSuggestions[activeSuggestionIndex].id,layerSuggestions[activeSuggestionIndex].name); } } else { event.preventDefault(); void submit(); } } if (event.key === 'Escape') { setMentionQuery(null); setLayerQuery(null); } }} placeholder="Ask for changes… Use @ for agents and # for layers" size="small" slotProps={{ htmlInput: { maxLength: 2000, 'aria-label': 'Message the project guild', style: { padding: 0 } } }} sx={{ position: 'relative', zIndex: 2, '& .MuiOutlinedInput-root': { alignItems: 'flex-start', borderRadius: 0, bgcolor: 'transparent', p: 0, '& fieldset': { border: 0 }, '&:hover fieldset': { border: 0 }, '&.Mui-focused fieldset': { border: 0 } }, '& textarea:not(:placeholder-shown)': { color: 'transparent !important', WebkitTextFillColor: 'transparent !important', caretColor: '#202b38' }, '& textarea::placeholder': { color: '#9ba4ac', opacity: 1 }, '& .MuiInputBase-inputMultiline': { p: 0, lineHeight: 1.5 } }}/>
      </Box>
     </Box>
-    <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'flex-end', mt: .5, minWidth: 0 }}>
+    <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', mt: .5, minWidth: 0 }}>
+     <input ref={fileInput} type="file" hidden multiple accept="image/png,image/jpeg,image/webp" aria-label="Reference image files" onChange={event => { references.add(event.target.files || []); event.target.value = ''; inputRef.current?.focus(); }}/>
+     <Tooltip title={references.full ? 'Up to 4 reference images' : 'Attach reference images'}><span><IconButton aria-label="Attach reference images" disabled={references.full} onClick={() => fileInput.current?.click()} sx={{ width: 32, height: 32, borderRadius: '8px', color: '#5b6770', '&:hover': { bgcolor: '#f1f4f3' } }}><Paperclip size={17}/></IconButton></span></Tooltip>
      {canStop ? <IconButton aria-label="Stop the guild" title="Stop the current task" disabled={stopping} onClick={() => void controlTasks(activeTaskIds, 'cancel')} sx={{ width: 32, height: 32, flex: 'none', borderRadius: '8px', bgcolor: '#202b38', color: '#fff', '&:hover': { bgcolor: '#000' }, '&.Mui-disabled': { bgcolor: 'action.disabledBackground', color: 'action.disabled' } }}><Square size={12} fill="currentColor"/></IconButton>
-     : <IconButton aria-label="Send message" color="primary" disabled={!text.trim() || saving} onClick={() => void submit()} sx={{ width: 32, height: 32, flex: 'none', borderRadius: '8px', bgcolor: 'primary.main', color: 'primary.contrastText', '&:hover': { bgcolor: 'primary.dark' }, '&.Mui-disabled': { bgcolor: 'action.disabledBackground', color: 'action.disabled' } }}>{saving ? <Skeleton variant="rounded" width={15} height={15} sx={{bgcolor:'currentColor',opacity:.5}}/> : <ArrowUp size={17}/>}</IconButton>}
+     : <IconButton aria-label="Send message" color="primary" disabled={!text.trim() || saving || references.uploading} onClick={() => void submit()} sx={{ width: 32, height: 32, flex: 'none', borderRadius: '8px', bgcolor: 'primary.main', color: 'primary.contrastText', '&:hover': { bgcolor: 'primary.dark' }, '&.Mui-disabled': { bgcolor: 'action.disabledBackground', color: 'action.disabled' } }}>{saving ? <Skeleton variant="rounded" width={15} height={15} sx={{bgcolor:'currentColor',opacity:.5}}/> : <ArrowUp size={17}/>}</IconButton>}
     </Stack>
    </Box>
   </Box>

@@ -3,15 +3,22 @@ import { createServer } from 'node:http';
 import { randomUUID, createHash } from 'node:crypto';
 const user = { id: '00000000-0000-4000-8000-000000000001', email: 'studio-test@example.com', aud: 'authenticated', role: 'authenticated', app_metadata: {}, user_metadata: {}, created_at: new Date().toISOString() };
 const token = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url') + '.' + Buffer.from(JSON.stringify({ sub: user.id, session_id:'00000000-0000-4000-8000-000000000002', exp: Math.floor(Date.now()/1000)+3600, role: 'authenticated' })).toString('base64url') + '.fixture-signature';
-const tables = { studio_workspaces: [], studio_projects: [], studio_keys: [], studio_versions: [], studio_screens: [], studio_screen_versions: [], studio_share_links: [], studio_agent_notes: [], studio_agent_messages: [], studio_canvas_commits: [], studio_tasks: [], studio_openrouter_keys: [], studio_groq_keys: [], studio_anthropic_keys: [], studio_trial_runs: [], studio_task_events: [], studio_task_subtasks: [], studio_generation_limits: [], studio_pipeline_drafts: [] };
+const tables = { studio_workspaces: [], studio_projects: [], studio_keys: [], studio_versions: [], studio_screens: [], studio_screen_versions: [], studio_share_links: [], studio_board_notes: [], studio_agent_notes: [], studio_agent_messages: [], studio_canvas_commits: [], studio_tasks: [], studio_openrouter_keys: [], studio_groq_keys: [], studio_anthropic_keys: [], studio_trial_runs: [], studio_task_events: [], studio_task_subtasks: [], studio_generation_limits: [], studio_pipeline_drafts: [] };
 const storageFiles=new Set();
+const storageBytes=new Map();
 let failedStorageDeletes=0;
 let projectReadDelay=null;
 const server = createServer(async (req, res) => {
  const url = new URL(req.url, 'http://localhost');
- let raw = ''; for await (const chunk of req) raw += chunk;
- const body = raw ? JSON.parse(raw) : {};
+ const chunks = []; for await (const chunk of req) chunks.push(chunk);
+ const bytes = Buffer.concat(chunks);
  const send = (data, status = 200) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(data)); };
+ // Private image storage: uploads keep their bytes so they can be downloaded again.
+ const object = url.pathname.match(/^\/storage\/v1\/object\/studio-assets\/(.+)$/);
+ if (object && req.method === 'POST') { if (req.headers.apikey !== 'sb_secret_test-studio-only') return send({}, 403); const path = decodeURIComponent(object[1]); storageFiles.add(path); storageBytes.set(path, { type: String(req.headers['content-type'] || 'application/octet-stream'), bytes }); return send({ Key: `studio-assets/${path}`, Id: path }); }
+ if (object && req.method === 'GET') { const stored = storageBytes.get(decodeURIComponent(object[1])); if (!stored) return send({ statusCode: '404', error: 'not_found', message: 'Object not found' }, 404); res.writeHead(200, { 'Content-Type': stored.type }); return res.end(stored.bytes); }
+ const raw = bytes.toString('utf8');
+ const body = raw ? JSON.parse(raw) : {};
  if (url.pathname === '/health') return send({ ok: true });
  if(url.pathname==='/__test/delay-project'&&req.method==='POST'){projectReadDelay={id:body.id,ms:Math.min(5000,Math.max(0,Number(body.ms)||0))};return send({ok:true});}
  if (url.pathname === '/auth/v1/otp') return send({});

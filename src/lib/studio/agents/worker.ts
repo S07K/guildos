@@ -12,11 +12,11 @@ import { agentIdentity, type AgentRole } from '../agent-roles.ts';
 import { initialPipeline, PipelineGateError, pipelineRoles, advanceDraft, rejectOrApprove, type PipelineState } from './pipeline.ts';
 import { proposeCanvasWork, auditPipeline, ProviderFailure } from './proposal.ts';
 import { trialConfig, claimTrialRun, releaseTrialRun, trialExhaustedMessage,noModelMessage } from '../trial.ts';
-import { isHtmlScreen, parseDeviceVersion, parseScreenScope, parseRegenerate, parseScreenTarget, parseVariation, stripScreenScope, type HtmlScreenDocument } from '../html-screen.ts';
+import { isHtmlScreen, parseDeviceVersion, parseNewScreenDevice, parseReferences, parseScreenScope, parseRegenerate, parseScreenTarget, parseVariation, stripScreenScope, type HtmlScreenDocument } from '../html-screen.ts';
 import { applyPlan, applyVariationLook, completeSection, deviceVersionState, variationState, failSection, initialSectionState, nextBatch, regenerateState, scopedSectionState, settle, usesSectionPipeline, type SectionPipelineState } from './section-pipeline.ts';
 import { buildSection, planScreen, SectionFailure, type SectionConnection } from './section-agents.ts';
 import { defaultImageModel, generateScreenImages, type ImageConnection } from './screen-images.ts';
-import { assetUrl, storeProjectImage } from '../project-assets.ts';
+import { ASSET_BUCKET, assetUrl, imageType, storeProjectImage } from '../project-assets.ts';
 
 function devWorkerLog(event:string,details:Record<string,unknown>={}) {
  if(process.env.NODE_ENV==='development') console.info('[GuildOS worker]',JSON.stringify({time:new Date().toISOString(),event,...details},null,2));
@@ -263,6 +263,19 @@ async function initialState(ctx:SectionStepContext):Promise<SectionPipelineState
  return initialSectionState(target.id,target.head_version_id);
 }
 
+/** Reference images attached to the request, as data URLs (only this project's images; unreadable ones are skipped). */
+async function loadReferences(ctx:SectionStepContext):Promise<string[]>{
+ const urls:string[]=[];
+ for(const id of parseReferences(ctx.task.instruction)){
+  const {data}=await ctx.client.storage.from(ASSET_BUCKET).download(`${ctx.task.workspace_id}/${ctx.task.project_id}/${id}`);
+  if(!data)continue;
+  const bytes=new Uint8Array(await data.arrayBuffer()),type=imageType(bytes);
+  if(type)urls.push(`data:${type};base64,${Buffer.from(bytes).toString('base64')}`);
+ }
+ return urls;
+}
+const IMAGES_IGNORED='The connected model cannot read images, so it designed from your text only. Connect OpenAI, Claude or a vision model on OpenRouter to use reference images.';
+
 /** One lease of the section pipeline: plan the screen, or build the next batch of sections and publish when none remain. */
 async function runSectionStep(ctx:SectionStepContext) {
  const {client,task,token,abort,event}=ctx;
@@ -300,8 +313,11 @@ async function runSectionStep(ctx:SectionStepContext) {
   const previous=regenerate?null:current;
   const styleReference=state.screenId||source?null:await loadScreenDocument(ctx,(await boardScreens(ctx)).find(screen=>screen.head_version_id)?.head_version_id??null);
   await event('status',source?`Exploring a different look for ${source.name}.`:regenerate&&current?`Designing ${current.name} again from scratch.`:previous?`Re-planning ${previous.name}.`:'Planning a new screen: theme tokens and sections.');
-  const plan=await ctx.withProviderFallback(connection=>planScreen(connection,{brief:ctx.brief,instruction:request,previous,styleReference,variation:source&&variation?{source,index:variation.index}:undefined,regenerate:regenerate&&current?current:undefined,notes:ctx.notes,signal:abort.signal}));
-  let screen=source&&variation?applyVariationLook(source,plan.screen,variation.index):regenerate&&current?{...plan.screen,name:current.name,device:current.device}:plan.screen;
+  // A new screen can come with a chosen device and reference images to design from.
+  const device=state.screenId||source?null:parseNewScreenDevice(task.instruction),references=await loadReferences(ctx);
+  const plan=await ctx.withProviderFallback(connection=>planScreen(connection,{brief:ctx.brief,instruction:request,previous,styleReference,variation:source&&variation?{source,index:variation.index}:undefined,regenerate:regenerate&&current?current:undefined,device:device??undefined,references,notes:ctx.notes,signal:abort.signal}));
+  if(plan.imagesIgnored)await event('status',IMAGES_IGNORED);
+  let screen=source&&variation?applyVariationLook(source,plan.screen,variation.index):regenerate&&current?{...plan.screen,name:current.name,device:current.device}:device?{...plan.screen,device}:plan.screen;
   const usage={model:plan.model,input_tokens:plan.input_tokens,output_tokens:plan.output_tokens};
   if(!source&&screen.art?.images.length){
    await event('status',`Generating ${screen.art.images.length} photos: ${screen.art.direction}`);
@@ -318,10 +334,12 @@ async function runSectionStep(ctx:SectionStepContext) {
  if(batch.length){
   await event('status',`Building ${batch.map(section=>section.id).join(', ')}.`);
   const screen=state.document!,plan=state.edit;
+  // A section edit or added section can also be guided by reference images.
+  const references=plan&&'sectionId' in plan?await loadReferences(ctx):[];
   await Promise.all(batch.map(async section=>{
    try {
     const edit=plan?.mode==='device'?{sourceHtml:plan.sources[section.id],sourceDevice:plan.sourceDevice}:plan&&'sectionId' in plan&&plan.sectionId===section.id?plan:undefined;
-    const built=await ctx.withProviderFallback(connection=>buildSection(connection,{brief:ctx.brief,instruction:request,screen,sectionId:section.id,edit,signal:abort.signal}));
+    const built=await ctx.withProviderFallback(connection=>buildSection(connection,{brief:ctx.brief,instruction:request,screen,sectionId:section.id,edit,references:edit&&'sectionId' in edit?references:undefined,signal:abort.signal}));
     await checkpoint(current=>completeSection(current,section.id,built.html),'ui_designer',{...built,summary:`${section.id}: ${built.summary}`});
    } catch(error) {
     if(abort.signal.aborted)return;

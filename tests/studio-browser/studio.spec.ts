@@ -2,6 +2,19 @@ import { test, expect } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { componentToCanvas } from '../../src/lib/studio/design-system.ts';
 import { blankCanvas } from '../../src/lib/studio/canvas.ts';
+import { createCanvasNode } from '../../src/lib/studio/canvas-position.ts';
+import type { Page } from '@playwright/test';
+
+/** New projects open as a board; the freeform canvas editor is for projects that already hold canvas work. */
+async function legacyCanvas(page: Page) {
+ await expect(page).toHaveURL(/\/studio\/projects\/[0-9a-f-]{36}$/);
+ const projectId = page.url().split('/').at(-1)!;
+ const frame = createCanvasNode('frame', 'existing-frame', { positionMode: 'absolute', x: 700, y: 40, width: 375, height: 300 });
+ const response = await page.request.post('/api/studio/canvas/commands', { headers: { origin: 'https://127.0.0.1:3105' }, data: { projectId, requestId: randomUUID(), expectedVersionId: null, commands: [{ type: 'create', node: frame }] } });
+ expect(response.status(), await response.text()).toBe(201);
+ await page.reload();
+ return projectId;
+}
 
 test('anonymous users cannot open projects or generate designs', async ({ page, request }) => {
  await page.goto('/studio'); await expect(page).toHaveURL(/\/signin$/);
@@ -100,8 +113,8 @@ test('manual canvas draws and persists a layer without a provider key', async ({
  await page.getByLabel('Project name').fill('Manual studio');
  await page.getByLabel('Your creative brief').fill('A manually designed landing page for independent designers.');
  await page.getByRole('button', { name: 'Create project', exact: true }).click();
+ await legacyCanvas(page);
  await page.getByRole('button',{name:'Layers',exact:true}).click(); // The editor opens on the conversation.
- await expect(page.getByText('No layers yet. Start a blank canvas or generate a first draft.')).toBeVisible();
  await page.getByRole('button', { name: 'Rectangle tool', exact: true }).click();
  const canvas = page.getByTestId('manual-canvas');
  const box = await canvas.boundingBox();
@@ -169,6 +182,7 @@ test('canvas text alignment and image insertion stay editable', async ({ page })
  await page.getByLabel('Project name').fill('Canvas controls');
  await page.getByLabel('Your creative brief').fill('A responsive food ordering screen.');
  await page.getByRole('button',{name:'Create project',exact:true}).click();
+ await legacyCanvas(page);
  await page.getByRole('button',{name:'Text tool',exact:true}).click();
  const canvas=page.getByTestId('manual-canvas');
  const box=await canvas.boundingBox(),viewport=await page.getByRole('region',{name:'Design canvas'}).boundingBox();
@@ -335,7 +349,8 @@ test('projects can be deleted from cards and the editor, with confirmation and r
  await expect(dialog.getByRole('alert')).toContainText('Retry deletion to finish');
  await dialog.getByRole('button',{name:'Delete project',exact:true}).click();
  await expect(page).toHaveURL('/studio/projects');
- expect((await (await page.request.get('http://127.0.0.1:3199/testing/assets')).json()).paths).toHaveLength(0);
+ // The deleted project's images are gone (other tests' uploads share this fake storage).
+ expect(((await (await page.request.get('http://127.0.0.1:3199/testing/assets')).json()).paths as string[]).filter(path => path.includes(`/${first}/`))).toHaveLength(0);
  expect((await page.request.get(`/api/studio/canvas?projectId=${first}`)).status()).toBe(404);
  const headers={origin:'https://127.0.0.1:3105'};
  expect((await page.request.delete('/api/studio/projects',{headers,data:{projectId:first}})).status()).toBe(200);

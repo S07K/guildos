@@ -290,6 +290,17 @@ const REGENERATE_MARKER = '\u2063guildos-regenerate:screen\u2063';
 export const encodeRegenerate = () => REGENERATE_MARKER;
 export const parseRegenerate = (text: string) => text.includes(REGENERATE_MARKER);
 
+/** New screen › device: the device the user chose for a new screen. */
+const NEW_DEVICE_MARKER = /\u2063guildos-new:(mobile|tablet|desktop)\u2063/;
+export const encodeNewScreenDevice = (device: HtmlDevice) => `\u2063guildos-new:${device}\u2063`;
+export const parseNewScreenDevice = (text: string) => (NEW_DEVICE_MARKER.exec(text)?.[1] as HtmlDevice | undefined) ?? null;
+
+/** Reference images attached to a request: project image ids the agents look at. */
+export const MAX_REFERENCES = 4;
+const REFERENCES_MARKER = /\u2063guildos-refs:([0-9a-f-]{36}(?:,[0-9a-f-]{36}){0,3})\u2063/i;
+export const encodeReferences = (ids: string[]) => ids.length ? `\u2063guildos-refs:${ids.slice(0, MAX_REFERENCES).join(',')}\u2063` : '';
+export const parseReferences = (text: string) => REFERENCES_MARKER.exec(text)?.[1].toLowerCase().split(',') ?? [];
+
 /**
  * Validates a screen saved from the manual editor and re-sanitises every section
  * (inline styles allowed). Throws with the first problem, phrased for the user.

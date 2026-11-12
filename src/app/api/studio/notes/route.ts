@@ -4,7 +4,7 @@ import { scheduleWorker } from '@/lib/studio/worker-trigger';
 import { adminClient, authConfig, sessionClient } from '@/lib/studio/supabase';
 import { agentIdentity, agentRoles } from '@/lib/studio/agent-roles';
 import { encodeLayerReference } from '@/lib/studio/revision-scope';
-import { encodeDeviceVersion, encodeScreenScope, encodeScreenTarget, encodeRegenerate, encodeVariation, isScreenScope, MAX_VARIATIONS, stripScreenScope } from '@/lib/studio/html-screen';
+import { encodeDeviceVersion, encodeScreenScope, encodeScreenTarget, encodeNewScreenDevice, encodeReferences, encodeRegenerate, encodeVariation, isScreenScope, MAX_REFERENCES, MAX_VARIATIONS, parseReferences, stripScreenScope } from '@/lib/studio/html-screen';
 
 export const runtime = 'nodejs';
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -47,7 +47,9 @@ export async function GET(request: Request) {
   const displayContent = sourceTask && sourceTask.instruction === note.body ? stripScreenScope(legacyBody.replace(/\n?\u2063guildos-layer:[a-z0-9-]{1,80}\u2063/g,'')) : legacyBody;
   const task = (tasks || []).find(item => item.summary && item.summary === note.body);
   const speaker = task ? latestTaskSpeaker.get(task.id) : undefined;
-  return speaker && agentRoles.includes(speaker as typeof agentRoles[number]) ? { ...note, author_role: speaker } : { ...note, displayContent };
+  // Reference images attached to the request, shown as thumbnails on the message.
+  const references = sourceTask ? parseReferences(sourceTask.instruction) : [];
+  return speaker && agentRoles.includes(speaker as typeof agentRoles[number]) ? { ...note, author_role: speaker } : { ...note, displayContent, ...(references.length ? { references } : {}) };
  });
  const progressNotes = conversationEvents.filter(event => event.speaker_role && !(event.kind === 'error' && (tasks || []).some(task => task.id === event.task_id && task.summary === event.body)) && (
   event.kind === 'result' || event.kind === 'error' || event.kind === 'status' && (event.body.startsWith('Working on: ') || /^Stage \d\/5 · /.test(event.body))
@@ -71,13 +73,13 @@ export async function POST(request: Request) {
  const client = await sessionClient();
  const { data: { user } } = await studioUser(client);
  if (!user) return json({ error: 'Your session expired. Sign in again.' }, 401);
- let body: { projectId?: unknown; versionId?: unknown; anchor?: unknown; mentionedRole?: unknown; targetLayerId?:unknown; screenScope?: unknown; screenId?: unknown; deviceVersion?: unknown; variation?: unknown; regenerate?: unknown; text?: unknown; displayMessage?: unknown; requestId?: unknown };
+ let body: { projectId?: unknown; versionId?: unknown; anchor?: unknown; mentionedRole?: unknown; targetLayerId?:unknown; screenScope?: unknown; screenId?: unknown; deviceVersion?: unknown; variation?: unknown; regenerate?: unknown; device?: unknown; references?: unknown; text?: unknown; displayMessage?: unknown; requestId?: unknown };
  try {
   const raw = await request.text();
   if (raw.length > 16000) return json({ error: 'Comment is too long.' }, 413);
   body = JSON.parse(raw);
  } catch { return json({ error: 'Invalid comment.' }, 400); }
- if (!body || typeof body.displayMessage !== 'string' || !body.displayMessage.trim() || body.displayMessage.length > 2000 || typeof body.requestId !== 'string' || !uuid.test(body.requestId) || typeof body.projectId !== 'string' || !uuid.test(body.projectId) || typeof body.text !== 'string' || !body.text.trim() || body.text.length > 2000 || (body.screenScope !== undefined && !isScreenScope(body.screenScope)) || (body.screenId !== undefined && (typeof body.screenId !== 'string' || !uuid.test(body.screenId))) || (body.deviceVersion !== undefined && !['mobile', 'tablet', 'desktop'].includes(String(body.deviceVersion))) || (body.variation !== undefined && (!Number.isInteger(body.variation) || (body.variation as number) < 1 || (body.variation as number) > MAX_VARIATIONS)) || (body.regenerate !== undefined && body.regenerate !== true) || ([body.screenScope, body.deviceVersion, body.variation, body.regenerate].filter(value => value !== undefined).length > 1) || ((body.screenScope !== undefined || body.deviceVersion !== undefined || body.variation !== undefined || body.regenerate !== undefined) && body.screenId === undefined) || body.targetLayerId!==undefined&&(typeof body.targetLayerId!=='string'||!/^[a-z0-9-]{1,80}$/i.test(body.targetLayerId)) || !anchors.includes(String(body.anchor)) || (body.mentionedRole !== null && body.mentionedRole !== undefined && !agentRoles.includes(body.mentionedRole as typeof agentRoles[number])) || (body.versionId && (typeof body.versionId !== 'string' || !uuid.test(body.versionId)))) return json({ error: 'Invalid comment.' }, 400);
+ if (!body || typeof body.displayMessage !== 'string' || !body.displayMessage.trim() || body.displayMessage.length > 2000 || typeof body.requestId !== 'string' || !uuid.test(body.requestId) || typeof body.projectId !== 'string' || !uuid.test(body.projectId) || typeof body.text !== 'string' || !body.text.trim() || body.text.length > 2000 || (body.screenScope !== undefined && !isScreenScope(body.screenScope)) || (body.screenId !== undefined && (typeof body.screenId !== 'string' || !uuid.test(body.screenId))) || (body.deviceVersion !== undefined && !['mobile', 'tablet', 'desktop'].includes(String(body.deviceVersion))) || (body.variation !== undefined && (!Number.isInteger(body.variation) || (body.variation as number) < 1 || (body.variation as number) > MAX_VARIATIONS)) || (body.regenerate !== undefined && body.regenerate !== true) || (body.device !== undefined && (body.screenId !== undefined || !['mobile', 'tablet', 'desktop'].includes(String(body.device)))) || (body.references !== undefined && (!Array.isArray(body.references) || body.references.length > MAX_REFERENCES || !body.references.every(id => typeof id === 'string' && uuid.test(id)))) || ([body.screenScope, body.deviceVersion, body.variation, body.regenerate].filter(value => value !== undefined).length > 1) || ((body.screenScope !== undefined || body.deviceVersion !== undefined || body.variation !== undefined || body.regenerate !== undefined) && body.screenId === undefined) || body.targetLayerId!==undefined&&(typeof body.targetLayerId!=='string'||!/^[a-z0-9-]{1,80}$/i.test(body.targetLayerId)) || !anchors.includes(String(body.anchor)) || (body.mentionedRole !== null && body.mentionedRole !== undefined && !agentRoles.includes(body.mentionedRole as typeof agentRoles[number])) || (body.versionId && (typeof body.versionId !== 'string' || !uuid.test(body.versionId)))) return json({ error: 'Invalid comment.' }, 400);
  const project = await projectFor(client, body.projectId);
  if (!project) return json({ error: 'Project not found.' }, 404);
  if (body.versionId) {
@@ -89,9 +91,10 @@ export async function POST(request: Request) {
   const { data: screen } = await client.from('studio_screens').select('id').eq('id', body.screenId).eq('project_id', project.id).maybeSingle();
   if (!screen) return json({ error: 'That screen is no longer on the board.' }, 404);
  }
- const markers = typeof body.screenId === 'string'
+ const references = encodeReferences(Array.isArray(body.references) ? body.references as string[] : []);
+ const markers = (typeof body.screenId === 'string'
   ? encodeScreenTarget(body.screenId) + (isScreenScope(body.screenScope) ? encodeScreenScope(body.screenScope) : body.deviceVersion ? encodeDeviceVersion(body.deviceVersion as 'mobile') : typeof body.variation === 'number' ? encodeVariation(body.variation) : body.regenerate ? encodeRegenerate() : '')
-  : typeof body.targetLayerId === 'string' ? encodeLayerReference(body.targetLayerId) : '';
+  : typeof body.targetLayerId === 'string' ? encodeLayerReference(body.targetLayerId) : body.device ? encodeNewScreenDevice(body.device as 'mobile') : '') + references;
  const { data, error } = await adminClient().rpc('enqueue_studio_task', {
   p_project: project.id, p_actor: user.id, p_request: body.requestId,
   p_text: withMarker(body.text.trim(), markers), p_role: body.mentionedRole || 'creative_director', p_version: body.versionId || null, p_display: body.displayMessage,

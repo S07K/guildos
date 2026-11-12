@@ -251,6 +251,11 @@ recording prompt was cancelled.
    - **Regenerate** (Generate ▾) plans the screen again from scratch (the planner sees its
      purpose, not its look), keeps its name and device, and publishes the next version.
    - Not yet: flows between screens.
+4b. **Board tools (done 2026-11-12):** a light dock (Select, Hand, New screen, Reference image,
+   Note), a zoom control with fit, scroll-to-pan, a New screen composer (device, prompt, up to 4
+   reference images sent to vision models), sticky notes, an empty-board start, and polish
+   (screen labels with device and width, frame shadows, toolbar above the title, a screen
+   inspector). UX Pilot's dock also has Diagram, Template, Import, Motion and Prototype: not built.
 5. **Collaboration and reach:** comments on elements, publish/share links, UX review,
    and design-system import.
    - **Share links (done 2026-11-12):** More ▾ Share (⌥L) creates a view-only link to the

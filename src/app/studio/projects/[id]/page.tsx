@@ -4,6 +4,7 @@ import { ProjectEditor } from '@/components/studio/project-editor';
 import { hasChatGPTPlan } from '@/lib/studio/chatgpt-oauth';
 import { trialStatus, workspaceConnections } from '@/lib/studio/trial';
 import { loadBoard } from '@/lib/studio/screens';
+import { loadBoardNotes } from '@/lib/studio/board-notes';
 export default async function ProjectPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{version?:string}> }) {
  const { id } = await params;
  const requestedVersion = (await searchParams).version;
@@ -13,8 +14,8 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
  if (!project) notFound();
  const { data: versions, error } = await client.from('studio_versions').select('*').eq('project_id', id).order('created_at', { ascending: false }).order('id', { ascending: false });
  if (error) throw new Error('Your saved designs could not be loaded.');
- const screens = await loadBoard(client, id);
+ const [screens, notes] = await Promise.all([loadBoard(client, id), loadBoardNotes(client, id)]);
  const admin = adminClient();
  const [connections, trial] = await Promise.all([workspaceConnections(admin, project.workspace_id, hasChatGPTPlan), trialStatus(admin, project.workspace_id)]);
- return <ProjectEditor project={project} initialVersions={versions || []} initialScreens={screens} initialVersionId={versions?.some(version=>version.id===requestedVersion)?requestedVersion:undefined} connections={connections} trial={Object.values(connections).some(Boolean)?null:trial}/>;
+ return <ProjectEditor project={project} initialVersions={versions || []} initialScreens={screens} initialNotes={notes} initialVersionId={versions?.some(version=>version.id===requestedVersion)?requestedVersion:undefined} connections={connections} trial={Object.values(connections).some(Boolean)?null:trial}/>;
 }
