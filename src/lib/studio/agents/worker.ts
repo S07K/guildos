@@ -6,6 +6,7 @@ import { blankCanvas, isCanvas } from '../canvas.ts';
 import { canvasQualityIssues } from '../canvas-quality.ts';
 import { screenDocument } from '../screen-scope.ts';
 import { openKey } from '../vault.mjs';
+import { hasClaudeCodeConnection, claudeCodeLocalKey, localClaudeCodeModel } from '../claude-code-local.ts';
 import { hasChatGPTPlan, chatGPTConnection } from '../chatgpt-oauth.ts';
 import { agentIdentity, type AgentRole } from '../agent-roles.ts';
 import { initialPipeline, PipelineGateError, pipelineRoles, stageInstructions, advanceDraft, rejectOrApprove, type PipelineState } from './pipeline.ts';
@@ -90,7 +91,9 @@ export async function runNextTask(client:SupabaseClient, propose=proposeCanvasWo
   if(JSON.stringify(document).length>120000) {await blocked('This canvas is too large for one agent task. Split the work into smaller tasks.');return true;}
   type Connection={key:string;model:string;provider:'openai'|'openrouter'|'groq'|'anthropic';chatgptPlan?:boolean;trial?:boolean;request?:typeof fetch};
   const connections:Connection[]=[];
-  if(claudeResult.data) connections.push({key:openKey(claudeResult.data.ciphertext,task.workspace_id),model:process.env.STUDIO_ANTHROPIC_MODEL||claudeResult.data.model,provider:'anthropic'});
+  // Local development: a workspace that connected Claude Code uses the signed-in CLI (subscription) instead of a stored key.
+  if(await hasClaudeCodeConnection(task.workspace_id)) connections.push({key:claudeCodeLocalKey,model:localClaudeCodeModel(),provider:'anthropic'});
+  else if(claudeResult.data) connections.push({key:openKey(claudeResult.data.ciphertext,task.workspace_id),model:process.env.STUDIO_ANTHROPIC_MODEL||claudeResult.data.model,provider:'anthropic'});
   if(groqResult.data) connections.push({key:openKey(groqResult.data.ciphertext,task.workspace_id),model:groqResult.data.model,provider:'groq'});
   if(routerResult.data) connections.push({key:openKey(routerResult.data.ciphertext,task.workspace_id),model:routerResult.data.model,provider:'openrouter'});
   if(keyResult.data) connections.push({key:openKey(keyResult.data.ciphertext,task.workspace_id),model:process.env.STUDIO_OPENAI_MODEL||'gpt-4.1-mini',provider:'openai'});
@@ -108,7 +111,7 @@ export async function runNextTask(client:SupabaseClient, propose=proposeCanvasWo
   let active=connections[0];
   const withProviderFallback=async<T>(run:(connection:Connection)=>Promise<T>):Promise<T>=>{
    let lastError:unknown;
-   const label=(connection:Connection)=>connection.trial?'the GuildOS trial model':connection.provider==='anthropic'?'Claude':connection.provider==='groq'?'Groq':connection.provider==='openrouter'?'OpenRouter':connection.chatgptPlan?'ChatGPT':'OpenAI API';
+   const label=(connection:Connection)=>connection.trial?'the GuildOS trial model':connection.provider==='anthropic'?(connection.key===claudeCodeLocalKey?'Claude Code (local)':'Claude'):connection.provider==='groq'?'Groq':connection.provider==='openrouter'?'OpenRouter':connection.chatgptPlan?'ChatGPT':'OpenAI API';
    for(let index=0;index<connections.length;index++) {
     const connection=connections[index];
     active=connection;

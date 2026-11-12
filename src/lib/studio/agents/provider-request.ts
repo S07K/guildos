@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { claudeCodeLocalKey, claudeCodeResponse, ClaudeCodeError } from '../claude-code-local.ts';
 
 export type AgentProvider = 'openai'|'openrouter'|'groq'|'anthropic';
 export class ProviderFailure extends Error {
@@ -63,6 +64,15 @@ type ResponsesBody={model:string;max_output_tokens?:number;instructions?:string;
 async function anthropicResponse(request:typeof fetch,options:RequestInit):Promise<Response> {
  const key=String(new Headers(options.headers).get('authorization')||'').replace(/^Bearer\s+/i,'');
  const body=JSON.parse(String(options.body)) as ResponsesBody;
+ if(key===claudeCodeLocalKey){
+  // Local development: the developer's Claude Code sign-in (subscription) instead of an API key.
+  try{return await claudeCodeResponse(body,options.signal);}
+  catch(error){
+   if(!(error instanceof ClaudeCodeError))throw error;
+   if(error.kind==='capacity')throw new ProviderFailure(error.message,false,true,{httpStatus:429});
+   throw new ProviderFailure(error.message,error.kind==='timeout'||error.kind==='failed',true);
+  }
+ }
  const client=new Anthropic({apiKey:key,fetch:request,maxRetries:1});
  const schema=body.text?.format?.type==='json_schema'?structuralSchema(body.text.format.schema) as Record<string,unknown>:undefined;
  const small=(body.max_output_tokens||0)<=600;

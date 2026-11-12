@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { hasClaudeCodeConnection } from './claude-code-local.ts';
 
 /**
  * Free trial on a platform-owned key, so a new workspace can see a real result
@@ -50,14 +51,15 @@ export type WorkspaceConnections = { api: boolean; chatgpt: boolean; anthropic: 
 
 /** Which of the workspace's own model connections exist (no secrets are read). */
 export async function workspaceConnections(admin: SupabaseClient, workspaceId: string, chatgpt: (workspaceId: string) => Promise<boolean>): Promise<WorkspaceConnections> {
- const [{ data: key }, { data: router }, { data: groq }, { data: claude }, plan] = await Promise.all([
+ const [{ data: key }, { data: router }, { data: groq }, { data: claude }, plan, claudeCode] = await Promise.all([
   admin.from('studio_keys').select('workspace_id').eq('workspace_id', workspaceId).maybeSingle(),
   admin.from('studio_openrouter_keys').select('workspace_id').eq('workspace_id', workspaceId).maybeSingle(),
   admin.from('studio_groq_keys').select('workspace_id').eq('workspace_id', workspaceId).maybeSingle(),
   admin.from('studio_anthropic_keys').select('workspace_id').eq('workspace_id', workspaceId).maybeSingle(),
   chatgpt(workspaceId),
+  hasClaudeCodeConnection(workspaceId),
  ]);
- return { api: !!key, chatgpt: plan, anthropic: !!claude, openrouter: !!router, groq: !!groq };
+ return { api: !!key, chatgpt: plan, anthropic: !!claude || claudeCode, openrouter: !!router, groq: !!groq };
 }
 
 /** Briefs parked because no model was available; they resume once a model is connected. */

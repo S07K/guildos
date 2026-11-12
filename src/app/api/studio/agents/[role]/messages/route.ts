@@ -6,6 +6,7 @@ import { replyAsAgent, replyAsChatGPT } from '@/lib/studio/agent-chat';
 import { agentRoles } from '@/lib/studio/agent-roles';
 import { withProviderFallback, preferredProvider } from '@/lib/studio/provider-fallback.ts';
 import { hasChatGPTPlan } from '@/lib/studio/chatgpt-oauth';
+import { hasClaudeCodeConnection, claudeCodeLocalKey, localClaudeCodeModel } from '@/lib/studio/claude-code-local';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
@@ -46,7 +47,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ rol
  catch { return json({ error: 'Invalid message.' }, 400); }
  if (typeof body?.text !== 'string' || !body.text.trim() || body.text.length > 4000 || (body.sharedThread !== undefined && typeof body.sharedThread !== 'boolean')) return json({ error: 'Write a message under 4,000 characters.' }, 400);
  const admin = adminClient();
- const [{ data: prior, error: priorError }, { data: notes, error: notesError }, { data: latestVersion, error: versionError }, { data: credential }, {data:routerCredential,error:routerError}, {data:groqCredential,error:groqError}, {data:claudeCredential,error:claudeError}, planConnected] = await Promise.all([
+ const [{ data: prior, error: priorError }, { data: notes, error: notesError }, { data: latestVersion, error: versionError }, { data: credential }, {data:routerCredential,error:routerError}, {data:groqCredential,error:groqError}, {data:claudeCredential,error:claudeError}, planConnected, claudeCodeConnected] = await Promise.all([
   ctx.client.from('studio_agent_messages').select('author_kind,body').eq('project_id', ctx.project.id).eq('workspace_id', ctx.project.workspace_id).eq('agent_role', ctx.role).order('created_at', { ascending: false }).limit(12),
   ctx.client.from('studio_agent_notes').select('author_role,mentioned_role,anchor,body').eq('project_id', ctx.project.id).order('created_at', { ascending: false }).limit(20),
   ctx.client.from('studio_versions').select('id,document').eq('project_id', ctx.project.id).eq('workspace_id', ctx.project.workspace_id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
@@ -55,9 +56,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ rol
   admin.from('studio_groq_keys').select('ciphertext,model').eq('workspace_id',ctx.project.workspace_id).maybeSingle(),
   admin.from('studio_anthropic_keys').select('ciphertext,model').eq('workspace_id',ctx.project.workspace_id).maybeSingle(),
   hasChatGPTPlan(ctx.project.workspace_id),
+  hasClaudeCodeConnection(ctx.project.workspace_id),
  ]);
  if (priorError || notesError || versionError || (routerError&&routerError.code!=='PGRST205') || (groqError&&groqError.code!=='PGRST205') || (claudeError&&claudeError.code!=='PGRST205')) return json({ error: 'Project context could not be loaded. Please try again.' }, 503);
- const available = { api: !!credential, chatgpt: planConnected, anthropic:!!claudeCredential, openrouter:!!routerCredential, groq:!!groqCredential };
+ const available = { api: !!credential, chatgpt: planConnected, anthropic:!!claudeCredential||claudeCodeConnected, openrouter:!!routerCredential, groq:!!groqCredential };
  if (!Object.values(available).some(Boolean)) return json({ error: 'Connect Claude, Groq, OpenRouter, ChatGPT, or an OpenAI API key in Connections first.' }, 400);
  const token = randomUUID();
  const { data: allowed, error: lockError } = await admin.rpc('reserve_studio_generation', { workspace: ctx.project.workspace_id, token });
@@ -67,7 +69,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ rol
   const input = { brief: ctx.project.brief, document: latestVersion?.document || null, notes: [...(notes || [])].reverse().slice(-10).map(note => ({ ...note, body: note.body.slice(0, 800) })), messages: [...(prior || [])].reverse().map(message => ({ ...message, body: message.body.slice(0, 1800) })), text: body.text.trim() };
   const attempt = await withProviderFallback({ preferred: preferredProvider(available), available, run: provider => provider === 'chatgpt'
    ? replyAsChatGPT({ ...input, workspace: ctx.project.workspace_id, role: ctx.role })
-   : replyAsAgent({ ...input, key: openKey((provider==='anthropic'?claudeCredential:provider==='openrouter'?routerCredential:provider==='groq'?groqCredential:credential)!.ciphertext, ctx.project.workspace_id), role: ctx.role,provider,model:provider==='anthropic'?process.env.STUDIO_ANTHROPIC_MODEL||claudeCredential!.model:provider==='openrouter'?routerCredential!.model:provider==='groq'?groqCredential!.model:undefined }) });
+   : replyAsAgent({ ...input, key: provider==='anthropic'&&claudeCodeConnected ? claudeCodeLocalKey : openKey((provider==='anthropic'?claudeCredential:provider==='openrouter'?routerCredential:provider==='groq'?groqCredential:credential)!.ciphertext, ctx.project.workspace_id), role: ctx.role,provider,model:provider==='anthropic'?(claudeCodeConnected?localClaudeCodeModel():process.env.STUDIO_ANTHROPIC_MODEL||claudeCredential!.model):provider==='openrouter'?routerCredential!.model:provider==='groq'?groqCredential!.model:undefined }) });
   const result = attempt.value;
   const now = Date.now();
   const rows = await admin.from('studio_agent_messages').insert([
