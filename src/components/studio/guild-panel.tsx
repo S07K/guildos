@@ -20,7 +20,7 @@ import { SelectionThumbnail } from './selection-preview';
 
 /** An element picked on an HTML screen; the composer offers Section edit, Add section or Global edit for it. */
 /** A selected screen, or an element in it (sectionId set): whole screens are edited globally, elements by section. */
-export type ScreenTarget = { screenId: string; sectionId?: string; path?: string; label: string; preview?: SelectionPreview };
+export type ScreenTarget = { screenId: string; screenName: string; sectionId?: string; path?: string; label: string; preview?: SelectionPreview };
 export type ScopeMode = 'section' | 'add' | 'global';
 
 export type GuildNote = { id: string; version_id: string | null; author_role: AgentRole | 'human'; mentioned_role: AgentRole | null; anchor: AgentAnchor; body: string; displayContent?: string; created_at: string };
@@ -153,8 +153,11 @@ export function GuildPanel({ projectId, versionId, layers: layerOptions = [], in
  async function submit() {
   const draftMessage = text;
   if (!draftMessage.trim() || saving || sending.current) return;
+  // A selection is sent as a visible reference too (#section, or #Screen-name for the whole screen), so the message says what it was about.
+  const targetReference = screenTarget ? `#${screenTarget.sectionId && scopeMode !== 'global' ? screenTarget.sectionId : screenTarget.screenName.trim().replace(/\s+/g, '-')}` : '';
+  const shownMessage = targetReference && !draftMessage.trimStart().startsWith(targetReference) ? `${targetReference} ${draftMessage.trimStart()}` : draftMessage;
   const contextPrefix = reviewFeedback ? `Revise the completed work for: ${reviewFeedback.instruction.slice(0,500)}\nRequested changes: ` : composerContext ? `#${composerContext.name} ` : '';
-  const message = `${contextPrefix}${draftMessage}`.slice(0, 2000);
+  const message = `${contextPrefix}${shownMessage}`.slice(0, 2000);
   const layerMentions=layerOptions.flatMap(layer=>[layer.name,layer.name.replace(/\s+/g,'_'),layer.id].map(label=>({id:layer.id,label}))).sort((a,b)=>b.label.length-a.label.length);
   const explicitLayer=layerMentions.flatMap(layer=>{const index=message.lastIndexOf(`#${layer.label}`),end=message[index+layer.label.length+1]||'';return index>=0&&!/[\p{L}\p{N}_-]/u.test(end)?[{id:layer.id,index}]:[];}).sort((a,b)=>b.index-a.index)[0]?.id;
   const mention = agentRoles.find(role => new RegExp(`@${agentIdentity[role].persona}\\b`, 'i').test(message)) || null;
@@ -166,7 +169,7 @@ export function GuildPanel({ projectId, versionId, layers: layerOptions = [], in
    const reviewScope = reviewFeedback?.screenScope;
    // Revising an added section re-plans the screen rather than adding another one.
    const screenScope = screenTarget ? selectedScope : isScreenScope(reviewScope) && reviewScope.mode === 'section' ? reviewScope : undefined;
-   const payload = JSON.stringify({ projectId, versionId: reviewFeedback?.versionId || versionId, anchor: 'page', mentionedRole: mention, targetLayerId:screenId?undefined:targetLayerId||explicitLayer, screenId, screenScope, text: message, displayMessage: draftMessage });
+   const payload = JSON.stringify({ projectId, versionId: reviewFeedback?.versionId || versionId, anchor: 'page', mentionedRole: mention, targetLayerId:screenId?undefined:targetLayerId||explicitLayer, screenId, screenScope, text: message, displayMessage: shownMessage.slice(0, 2000) });
    if (pendingMessage.current?.payload !== payload) pendingMessage.current = {payload,requestId:crypto.randomUUID()};
    const response = await fetch('/api/studio/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({...JSON.parse(payload),requestId:pendingMessage.current.requestId}) });
    const data = await conversationData(response);

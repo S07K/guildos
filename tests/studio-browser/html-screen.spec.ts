@@ -116,6 +116,10 @@ test('a section draft renders live: the agent cursor works over pending sections
  const payload = JSON.parse((await sent).postData()!);
  expect(payload.screenScope).toEqual({ mode: 'section', sectionId: 'hero', path: expect.stringMatching(/nth-child/) });
  expect(payload.screenId).toBe(published.id);
+ // The selection is shown in the sent message as a reference.
+ expect(payload.displayMessage).toBe('#hero Make this button rust');
+ expect(payload.text).toMatch(/^#hero Make this button rust/);
+ await expect(page.getByText('#hero', { exact: true }).first()).toBeVisible();
  await expect(chip).toHaveCount(0);
  await expect(page.locator('[data-screen-selection]')).toHaveCount(0);
 
