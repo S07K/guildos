@@ -34,7 +34,7 @@
     "@mui/material-nextjs": "9.5.0",
     "@supabase/ssr": "0.12.7",
     "@supabase/supabase-js": "2.117.3",
-    "@vercel/analytics": "1.6.1",
+    "@vercel/analytics": "2.0.1",
     "bot-avatars": "^0.2.2",
     "gsap": "3.15.0",
     "html-to-image": "^1.11.13",
