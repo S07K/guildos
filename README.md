@@ -55,7 +55,6 @@
 - [Testing](#testing)
 - [Deployment](#deployment)
 - [Documentation](#documentation)
-- [Roadmap](#roadmap)
 - [Contributing](#contributing)
 - [Security](#security)
 - [License](#license)
@@ -276,22 +275,6 @@ GuildOS is designed for **Vercel + Supabase**:
 | [canvas-commands.md](docs/canvas-commands.md) | Canvas command model |
 | [studio-exports.md](docs/studio-exports.md) | Export formats |
 | [icon-mcp.md](docs/icon-mcp.md) | Icon and image MCP server |
-
-## Roadmap
-
-Planned and not yet built (from [docs/system-design.md](docs/system-design.md#13-not-built-yet-keep-off-the-how-it-works-slides) and [docs/agent-workspace-roadmap.md](docs/agent-workspace-roadmap.md)):
-
-- [ ] Flows and prototype links between screens
-- [ ] Comments on screens
-- [ ] Workspace-level conversations and direct messages with specialists
-- [ ] Saved task-board views, priorities and due dates
-- [ ] Design-system import
-- [ ] Figma / Webflow export
-- [ ] Shared vector memory across projects
-- [ ] Team workspaces, invitations, roles and enterprise SSO
-- [ ] Publishing to a custom domain
-
-Have an idea? Open a [feature request](https://github.com/S07K/guildos/issues/new?template=feature_request.yml) or start a [discussion](https://github.com/S07K/guildos/discussions).
 
 ## Contributing
 
