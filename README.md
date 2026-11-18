@@ -38,7 +38,7 @@
 
 <br />
 
-<img src="public/og-image.png" alt="GuildOS: your next big idea, a whole guild behind it" width="820" />
+<img src=".github/assets/guildos-demo.gif" alt="GuildOS demo: the AI guild generating an HTML design from a brief" width="820" />
 
 </div>
 
