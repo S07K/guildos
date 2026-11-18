@@ -21,8 +21,8 @@ Configure an MCP client to launch `node` with the absolute path to `scripts/icon
   "mcpServers": {
     "guildos-icons": {
       "command": "node",
-      "args": ["/Users/shubham/personal/startups/guildos/scripts/icon-mcp.ts"],
-      "cwd": "/Users/shubham/personal/startups/guildos"
+      "args": ["/absolute/path/to/guildos/scripts/icon-mcp.ts"],
+      "cwd": "/absolute/path/to/guildos"
     }
   }
 }

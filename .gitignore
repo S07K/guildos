@@ -13,3 +13,8 @@ playwright-report/
 
 .vercel/
 supabase/.temp/
+
+# Local credentials and keys
+*.pem
+*.key
+*.p12
